@@ -23,6 +23,7 @@ const CANVAS = (() => {
   const svgEls   = [null, null]; // SVG elements for setup 0 and 1
   const wrappers = [null, null]; // canvas-wrapper divs
   const manualZoom = [1, 1];
+  let dropAreasVisible = true;
   const renderMetrics = [
     { intrinsicWidth: 0, intrinsicHeight: 0, zoom: 1, fitZoom: 1, manualZoom: 1, pad: 12 },
     { intrinsicWidth: 0, intrinsicHeight: 0, zoom: 1, fitZoom: 1, manualZoom: 1, pad: 12 }
@@ -62,6 +63,59 @@ const CANVAS = (() => {
     const t = el('text', { x, y, ...extraAttrs }, cls);
     t.textContent = str;
     return t;
+  }
+
+  function _resolutionTierTag(width, height) {
+    const longEdge = Math.max(width || 0, height || 0);
+    const shortEdge = Math.min(width || 0, height || 0);
+
+    if ((longEdge === 8192 && shortEdge === 4320) || (longEdge === 7680 && shortEdge === 4320)) {
+      return ' (8K)';
+    }
+    if ((longEdge === 4096 && shortEdge === 2160) || (longEdge === 3840 && shortEdge === 2160)) {
+      return ' (4K)';
+    }
+    if ((longEdge === 2560 && shortEdge === 1440) || (longEdge === 2048 && shortEdge === 1080)) {
+      return ' (2K)';
+    }
+    return '';
+  }
+
+  function _displayResolution(cell) {
+    if (!cell || !cell.selectedResolution) return '';
+    const width = cell.orientation === 'portrait'
+      ? cell.selectedResolution.height
+      : cell.selectedResolution.width;
+    const height = cell.orientation === 'portrait'
+      ? cell.selectedResolution.width
+      : cell.selectedResolution.height;
+    return `${width}×${height}${_resolutionTierTag(width, height)}`;
+  }
+
+  function _monitorRectFromCellRect(rect, cell, monitor) {
+    const physicalW = cell.orientation === 'portrait'
+      ? monitor.physicalHeight_mm
+      : monitor.physicalWidth_mm;
+    const physicalH = cell.orientation === 'portrait'
+      ? monitor.physicalWidth_mm
+      : monitor.physicalHeight_mm;
+    return {
+      x: rect.x + (cell.offsetX || 0),
+      y: rect.y + (cell.offsetY || 0),
+      w: GRID.mmToDisplay(physicalW),
+      h: GRID.mmToDisplay(physicalH)
+    };
+  }
+
+  function getMonitorRect(setupIndex, row, col) {
+    const cell = STATE.getCell(setupIndex, row, col);
+    if (!cell) return null;
+    const monitor = CATALOG.find(m => m.id === cell.monitorId);
+    if (!monitor) return null;
+
+    const { colWidths, rowHeights } = GRID.calcDimensions(setupIndex);
+    const rect = GRID.cellRect(colWidths, rowHeights, row, col);
+    return _monitorRectFromCellRect(rect, cell, monitor);
   }
 
   /* ---- Main render ---- */
@@ -143,7 +197,7 @@ const CANVAS = (() => {
       x: rect.x, y: rect.y,
       width: rect.w, height: rect.h,
       rx: 4
-    }, 'cell-empty');
+    }, `cell-empty${dropAreasVisible ? '' : ' drop-area-hidden'}`);
 
     g.appendChild(r);
 
@@ -153,6 +207,7 @@ const CANVAS = (() => {
     const hint = text('+', cx, cy + 4, 'dim-text');
     hint.setAttribute('font-size', '20');
     hint.setAttribute('opacity', '0.3');
+    if (!dropAreasVisible) hint.classList.add('empty-cell-hint-hidden');
     g.appendChild(hint);
 
     svg.appendChild(g);
@@ -163,6 +218,8 @@ const CANVAS = (() => {
   function _drawMonitor(svg, setupIndex, row, col, rect, cell) {
     const monitor = CATALOG.find(m => m.id === cell.monitorId);
     if (!monitor) return;
+
+    const monRect = _monitorRectFromCellRect(rect, cell, monitor);
 
     const selected = (() => {
       const sel = STATE.getSelected();
@@ -181,43 +238,76 @@ const CANVAS = (() => {
     // Body (outer bezel)
     const BEZEL = 6;
     const body = el('rect', {
-      x: rect.x, y: rect.y,
-      width: rect.w, height: rect.h,
+      x: monRect.x, y: monRect.y,
+      width: monRect.w, height: monRect.h,
       rx: 4
     }, 'monitor-body' + (selected ? ' selected' : ''));
     g.appendChild(body);
 
     // Screen area (inner)
     const screen = el('rect', {
-      x: rect.x + BEZEL, y: rect.y + BEZEL,
-      width: Math.max(rect.w - BEZEL * 2, 10),
-      height: Math.max(rect.h - BEZEL * 2 - 10, 10),
+      x: monRect.x + BEZEL, y: monRect.y + BEZEL,
+      width: Math.max(monRect.w - BEZEL * 2, 10),
+      height: Math.max(monRect.h - BEZEL * 2 - 10, 10),
       rx: 2
     }, 'monitor-screen');
     g.appendChild(screen);
 
     // Size label
-    const cx = rect.x + rect.w / 2;
-    const cy = rect.y + rect.h / 2;
-    const sizeLabel = text(`${monitor.size}"`, cx, cy - 8, 'monitor-label-size');
+    const hasPip = !!(cell.pipZones && cell.pipZones.length && monitor.pipSupported);
+    const pipPortrait = hasPip && cell.orientation === 'portrait';
+    const cx = monRect.x + monRect.w / 2;
+    const cy = monRect.y + monRect.h / 2;
+
+    const pipScreenTop = monRect.y + BEZEL;
+    const pipScreenBottom = monRect.y + monRect.h - BEZEL - 10;
+    const infoBgW = Math.max(Math.min(monRect.w - BEZEL * 2 - 10, 190), 90);
+    const infoBgH = 36;
+    const infoBgX = monRect.x + BEZEL + 4;
+    const infoBgY = pipPortrait
+      ? (pipScreenBottom - infoBgH - 4)
+      : (pipScreenTop + 4);
+
+    const infoX = hasPip ? (infoBgX + 6) : cx;
+    const sizeY = hasPip ? (infoBgY + 11) : (cy - 8);
+    const resY = hasPip ? (sizeY + 12) : (cy + 8);
+    const brandY = hasPip ? (resY + 11) : (cy + 21);
+    const anchor = hasPip ? 'start' : 'middle';
+
+    if (hasPip) {
+      const infoBg = el('rect', {
+        x: infoBgX,
+        y: infoBgY,
+        width: infoBgW,
+        height: infoBgH,
+        rx: 4
+      }, 'monitor-info-backdrop');
+      g.appendChild(infoBg);
+    }
+
+    const sizeLabel = text(`${monitor.size}"`, infoX, sizeY, 'monitor-label-size', {
+      'text-anchor': anchor
+    });
     g.appendChild(sizeLabel);
 
     // Resolution label
-    const resText = cell.selectedResolution
-      ? `${cell.selectedResolution.width}×${cell.selectedResolution.height}`
-      : '';
-    const resLabel = text(resText, cx, cy + 8, 'monitor-label-res');
+    const resText = _displayResolution(cell);
+    const resLabel = text(resText, infoX, resY, 'monitor-label-res', {
+      'text-anchor': anchor
+    });
     g.appendChild(resLabel);
 
     // Brand label
-    const brandLabel = text(monitor.brand, cx, cy + 21, 'monitor-label-brand');
+    const brandLabel = text(monitor.brand, infoX, brandY, 'monitor-label-brand', {
+      'text-anchor': anchor
+    });
     g.appendChild(brandLabel);
 
     // Selected ring
     if (selected) {
       const ring = el('rect', {
-        x: rect.x - 3, y: rect.y - 3,
-        width: rect.w + 6, height: rect.h + 6,
+        x: monRect.x - 3, y: monRect.y - 3,
+        width: monRect.w + 6, height: monRect.h + 6,
         rx: 6
       }, 'monitor-selected-ring');
       g.appendChild(ring);
@@ -226,8 +316,8 @@ const CANVAS = (() => {
     // Stream overlay
     if (cell.streamId) {
       const overlay = el('rect', {
-        x: rect.x + BEZEL, y: rect.y + BEZEL,
-        width: rect.w - BEZEL * 2, height: rect.h - BEZEL * 2 - 10,
+        x: monRect.x + BEZEL, y: monRect.y + BEZEL,
+        width: monRect.w - BEZEL * 2, height: monRect.h - BEZEL * 2 - 10,
         rx: 3
       }, 'stream-overlay');
       g.appendChild(overlay);
@@ -236,8 +326,8 @@ const CANVAS = (() => {
     }
 
     // PiP zones
-    if (cell.pipZones && cell.pipZones.length && monitor.pipSupported) {
-      PIP.renderZones(g, rect, cell, monitor);
+    if (hasPip) {
+      PIP.renderZones(g, monRect, cell, monitor);
     }
 
     // Click → select
@@ -245,7 +335,7 @@ const CANVAS = (() => {
       e.stopPropagation();
       STATE.setSelected(setupIndex, row, col);
       render(setupIndex); // re-render to show selection ring
-      POPOVER.show(setupIndex, row, col, g, rect);
+      POPOVER.show(setupIndex, row, col, g, monRect);
     });
 
     // Draggable for canvas→canvas move
@@ -344,6 +434,20 @@ const CANVAS = (() => {
   function getRenderMetrics(setupIndex) { return renderMetrics[setupIndex]; }
   function getManualZoom(setupIndex) { return manualZoom[setupIndex]; }
 
+  function openCellPopover(setupIndex, row, col) {
+    const svg = svgEls[setupIndex];
+    if (!svg || !STATE.getCell(setupIndex, row, col)) return;
+
+    STATE.setSelected(setupIndex, row, col);
+    render(setupIndex);
+
+    const rect = getMonitorRect(setupIndex, row, col);
+    const group = svg.querySelector(
+      `[data-role="monitor"][data-setup="${setupIndex}"][data-row="${row}"][data-col="${col}"]`
+    );
+    if (group && rect) POPOVER.show(setupIndex, row, col, group, rect);
+  }
+
   function _setManualZoom(setupIndex, value) {
     const clamped = Math.max(MANUAL_MIN, Math.min(MANUAL_MAX, value));
     manualZoom[setupIndex] = Math.round(clamped * 100) / 100;
@@ -364,6 +468,21 @@ const CANVAS = (() => {
     return _setManualZoom(setupIndex, 1);
   }
 
+  function setDropAreasVisible(visible) {
+    const next = !!visible;
+    if (dropAreasVisible === next) return dropAreasVisible;
+    dropAreasVisible = next;
+    render(0);
+    render(1);
+    LABELS.syncLabels(0);
+    LABELS.syncLabels(1);
+    return dropAreasVisible;
+  }
+
+  function isDropAreasVisible() {
+    return dropAreasVisible;
+  }
+
   return {
     init,
     render,
@@ -373,8 +492,12 @@ const CANVAS = (() => {
     getWrapper,
     getRenderMetrics,
     getManualZoom,
+    getMonitorRect,
+    openCellPopover,
     zoomIn,
     zoomOut,
-    resetManualZoom
+    resetManualZoom,
+    setDropAreasVisible,
+    isDropAreasVisible
   };
 })();

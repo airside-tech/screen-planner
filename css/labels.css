@@ -107,7 +107,11 @@
   cursor: pointer;
   transition: border-color 0.12s, transform 0.1s;
 }
-.label-color-swatch:hover { transform: scale(1.2); }
+
+.label-color-swatch:hover {
+  transform: scale(1.2);
+}
+
 .label-color-swatch.active { border-color: #fff; }
 .swatch-sky    { background: #1e7fcb; }
 .swatch-teal   { background: #1a8f78; }
@@ -115,8 +119,46 @@
 .swatch-violet { background: #7c3aed; }
 .swatch-rose   { background: #be185d; }
 
+.label-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.btn-label-action {
+  min-width: 48px;
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid var(--color-border, #3a3f4d);
+  color: var(--color-text, #e0e4ef);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.12s;
+}
+
+.btn-label-ok {
+  border-color: var(--color-accent, #4a9eff);
+  color: var(--color-accent, #4a9eff);
+}
+
+.btn-label-action:hover {
+  border-color: var(--color-accent, #4a9eff);
+  color: #fff;
+}
+
+.btn-label-ok:hover {
+  background: var(--color-accent, #4a9eff);
+}
+
+.btn-label-cancel:hover {
+  background: var(--color-surface2, #2a2f3b);
+}
+
 .btn-remove-label {
-  padding: 5px;
+  margin-left: auto;
+  padding: 5px 10px;
   background: transparent;
   border: 1px solid var(--color-danger, #e05555);
   color: var(--color-danger, #e05555);
@@ -126,6 +168,7 @@
   font-weight: 600;
   transition: all 0.12s;
 }
+
 .btn-remove-label:hover {
   background: var(--color-danger, #e05555);
   color: #fff;

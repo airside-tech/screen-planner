@@ -6,7 +6,7 @@
  * Each zone carries an add-label affordance (+) that fires a 'pip:addLabel' event.
  *
  * Public API:
- *   PIP.calcZonePreset(monRect, count, monitor) — returns PipZone[]
+ *   PIP.calcZonePreset(monRect, count, monitor, orientation) — returns PipZone[]
  *   PIP.renderZones(parentG, monRect, cell, monitor) — draws zone groups into parentG
  */
 
@@ -18,6 +18,22 @@ const PIP = (() => {
   const STAND = 10;  // px height of monitor stand at bottom
   const GAP   = 4;   // px gap between adjacent zones
   const AFFORD = 14; // px size of the + add-label affordance button
+
+  function _resolutionTierTag(width, height) {
+    const longEdge = Math.max(width || 0, height || 0);
+    const shortEdge = Math.min(width || 0, height || 0);
+
+    if ((longEdge === 8192 && shortEdge === 4320) || (longEdge === 7680 && shortEdge === 4320)) {
+      return ' (8K)';
+    }
+    if ((longEdge === 4096 && shortEdge === 2160) || (longEdge === 3840 && shortEdge === 2160)) {
+      return ' (4K)';
+    }
+    if ((longEdge === 2560 && shortEdge === 1440) || (longEdge === 2048 && shortEdge === 1080)) {
+      return ' (2K)';
+    }
+    return '';
+  }
 
   function _el(tag, attrs, cls) {
     const e = document.createElementNS(SVG_NS, tag);
@@ -37,9 +53,10 @@ const PIP = (() => {
    * Returns an array of { id, x, y, w, h, labels: [] } in SVG intrinsic coords.
    * @param {{ x, y, w, h }} monRect  — full cell rect from GRID.cellRect
    * @param {2|3|4} count
-   * @returns {Array}
+  * @param {'landscape'|'portrait'} orientation
+  * @returns {Array}
    */
-  function calcZonePreset(monRect, count) {
+  function calcZonePreset(monRect, count, monitor, orientation) {
     // Screen area = monRect inset by BEZEL on all sides minus STAND at bottom
     const sx = monRect.x + BEZEL;
     const sy = monRect.y + BEZEL;
@@ -54,16 +71,31 @@ const PIP = (() => {
     const zones = [];
     const id = () => 'zone-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
+    const portrait = orientation === 'portrait';
+
     if (count === 2) {
-      // Left | Right
-      zones.push({ id: id(), x: sx,      y: sy, w: half_w,          h: sh,     labels: [] });
-      zones.push({ id: id(), x: right_x, y: sy, w: sw - half_w - GAP, h: sh,  labels: [] });
+      if (portrait) {
+        // Top | Bottom
+        zones.push({ id: id(), x: sx, y: sy,       w: sw, h: half_h,          labels: [] });
+        zones.push({ id: id(), x: sx, y: bottom_y, w: sw, h: sh - half_h - GAP, labels: [] });
+      } else {
+        // Left | Right
+        zones.push({ id: id(), x: sx,      y: sy, w: half_w,            h: sh, labels: [] });
+        zones.push({ id: id(), x: right_x, y: sy, w: sw - half_w - GAP, h: sh, labels: [] });
+      }
 
     } else if (count === 3) {
-      // Left (full height) | Right-top / Right-bottom
-      zones.push({ id: id(), x: sx,      y: sy,       w: half_w,          h: sh,              labels: [] });
-      zones.push({ id: id(), x: right_x, y: sy,       w: sw - half_w - GAP, h: half_h,        labels: [] });
-      zones.push({ id: id(), x: right_x, y: bottom_y, w: sw - half_w - GAP, h: sh - half_h - GAP, labels: [] });
+      if (portrait) {
+        // Top (full width) | Bottom-left / Bottom-right
+        zones.push({ id: id(), x: sx,      y: sy,       w: sw,              h: half_h,          labels: [] });
+        zones.push({ id: id(), x: sx,      y: bottom_y, w: half_w,          h: sh - half_h - GAP, labels: [] });
+        zones.push({ id: id(), x: right_x, y: bottom_y, w: sw - half_w - GAP, h: sh - half_h - GAP, labels: [] });
+      } else {
+        // Left (full height) | Right-top / Right-bottom
+        zones.push({ id: id(), x: sx,      y: sy,       w: half_w,            h: sh,              labels: [] });
+        zones.push({ id: id(), x: right_x, y: sy,       w: sw - half_w - GAP, h: half_h,          labels: [] });
+        zones.push({ id: id(), x: right_x, y: bottom_y, w: sw - half_w - GAP, h: sh - half_h - GAP, labels: [] });
+      }
 
     } else if (count === 4) {
       // 2×2 grid
@@ -82,6 +114,15 @@ const PIP = (() => {
    */
   function renderZones(parentG, monRect, cell, monitor) {
     if (!cell.pipZones || !cell.pipZones.length) return;
+
+    const sourceW = cell.selectedResolution
+      ? (cell.orientation === 'portrait' ? cell.selectedResolution.height : cell.selectedResolution.width)
+      : 0;
+    const sourceH = cell.selectedResolution
+      ? (cell.orientation === 'portrait' ? cell.selectedResolution.width : cell.selectedResolution.height)
+      : 0;
+    const screenW = Math.max(monRect.w - BEZEL * 2, 1);
+    const screenH = Math.max(monRect.h - BEZEL * 2 - STAND, 1);
 
     // Find setupIndex/row/col from the parent monitor <g>
     const si  = parseInt(parentG.dataset.setup, 10);
@@ -109,6 +150,18 @@ const PIP = (() => {
         'dominant-baseline': 'middle',
         'text-anchor': 'middle'
       }, 'pip-zone-index', String(idx + 1)));
+
+      if (sourceW > 0 && sourceH > 0 && zone.w >= 76 && zone.h >= 34) {
+        const zoneMaxW = Math.max(1, Math.round(sourceW * (zone.w / screenW)));
+        const zoneMaxH = Math.max(1, Math.round(sourceH * (zone.h / screenH)));
+        const tier = _resolutionTierTag(zoneMaxW, zoneMaxH);
+        g.appendChild(_txt('text', {
+          x: cx,
+          y: zone.y + zone.h - 10,
+          'dominant-baseline': 'middle',
+          'text-anchor': 'middle'
+        }, 'pip-zone-maxres', `${zoneMaxW}×${zoneMaxH}${tier}`));
+      }
 
       // Add-label affordance (+) in top-right corner
       if (zone.w >= AFFORD + 8 && zone.h >= AFFORD + 8) {

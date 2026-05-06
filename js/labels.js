@@ -28,6 +28,8 @@ const LABELS = (() => {
   const tooltip   = () => document.getElementById('labelTooltip');
   const txtInput  = () => document.getElementById('labelTextInput');
   const colorsEl  = () => document.getElementById('labelColors');
+  const okBtn     = () => document.getElementById('labelOkBtn');
+  const cancelBtn = () => document.getElementById('labelCancelBtn');
   const removeLbl = () => document.getElementById('removeLabelBtn');
 
   function init() {
@@ -45,57 +47,46 @@ const LABELS = (() => {
       });
     }
 
-    // Text input live update
     const inp = txtInput();
     if (inp) {
-      inp.addEventListener('input', () => {
-        if (!_editState) return;
-        if (_editState.zoneId) {
-          STATE.updateZoneLabel(
-            _editState.setupIndex, _editState.row, _editState.col,
-            _editState.zoneId, _editState.labelId, { text: inp.value }
-          );
-        } else {
-          STATE.updateLabel(
-            _editState.setupIndex, _editState.row, _editState.col,
-            _editState.labelId, { text: inp.value }
-          );
+      inp.addEventListener('input', _previewDraft);
+      inp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          _commitTooltip();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          _cancelTooltip();
         }
-        // Update DOM directly for immediate feedback (state:changed fires sync too)
-        const lel = document.getElementById(_editState.labelId);
-        if (lel) lel.textContent = inp.value || 'Label';
       });
     }
 
-    // Remove button
+    const ok = okBtn();
+    if (ok) ok.addEventListener('click', _commitTooltip);
+
+    const cancel = cancelBtn();
+    if (cancel) cancel.addEventListener('click', _cancelTooltip);
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _editState) {
+        e.preventDefault();
+        _cancelTooltip();
+      }
+    });
+
     const rb = removeLbl();
     if (rb) {
-      rb.addEventListener('click', () => {
-        if (!_editState) return;
-        if (_editState.zoneId) {
-          STATE.removeZoneLabel(
-            _editState.setupIndex, _editState.row, _editState.col,
-            _editState.zoneId, _editState.labelId
-          );
-        } else {
-          STATE.removeLabel(
-            _editState.setupIndex, _editState.row, _editState.col, _editState.labelId
-          );
-        }
-        _closeTooltip();
-      });
+      rb.addEventListener('click', _removeCurrentLabel);
     }
 
-    // Close tooltip on outside click
     document.addEventListener('click', e => {
       if (_editState &&
           !e.target.closest('.label-tooltip') &&
           !e.target.closest('.screen-label')) {
-        _closeTooltip();
+        _cancelTooltip();
       }
     });
 
-    // Zone add-label events from pip.js
     document.addEventListener('pip:addLabel', e => {
       const { setupIndex, row, col, zoneId } = e.detail;
       addZoneLabel(setupIndex, row, col, zoneId);
@@ -120,58 +111,60 @@ const LABELS = (() => {
     for (let r = 0; r < GRID.MAX_ROWS; r++) {
       for (let c = 0; c < GRID.MAX_COLS; c++) {
         const cell = STATE.getCell(setupIndex, r, c);
-        if (!cell || !cell.labels.length) continue;
+        if (!cell) continue;
 
-        const rect  = GRID.cellRect(colWidths, rowHeights, r, c);
-        // Pixel offset of this cell within wrapper after fit-to-content zoom.
+        const rect  = CANVAS.getMonitorRect(setupIndex, r, c);
+        if (!rect) continue;
+        // Pixel offset of this monitor within wrapper after fit-to-content zoom.
         const cellOffX = pad + rect.x * zoom;
         const cellOffY = pad + rect.y * zoom;
 
-        const container = document.createElement('div');
-        container.className = 'label-container';
-        container.dataset.setup = setupIndex;
-        container.dataset.row   = r;
-        container.dataset.col   = c;
-        container.style.left   = cellOffX + 'px';
-        container.style.top    = cellOffY + 'px';
-        container.style.width  = Math.round(rect.w * zoom) + 'px';
-        container.style.height = Math.round(rect.h * zoom) + 'px';
-        container.style.position = 'absolute';
-        container.style.pointerEvents = 'none';
-        wrapper.appendChild(container);
+        if (cell.labels && cell.labels.length) {
+          const container = document.createElement('div');
+          container.className = 'label-container';
+          container.dataset.setup = setupIndex;
+          container.dataset.row   = r;
+          container.dataset.col   = c;
+          container.style.left   = cellOffX + 'px';
+          container.style.top    = cellOffY + 'px';
+          container.style.width  = Math.round(rect.w * zoom) + 'px';
+          container.style.height = Math.round(rect.h * zoom) + 'px';
+          container.style.position = 'absolute';
+          container.style.pointerEvents = 'none';
+          wrapper.appendChild(container);
 
-        cell.labels.forEach(lbl => {
-          _createLabelEl(container, lbl, setupIndex, r, c, rect.w, rect.h, zoom,
-                         null /* no zoneId */);
-        });
-      }
-
-      // Zone labels
-      if (cell.pipZones && cell.pipZones.length) {
-        cell.pipZones.forEach(zone => {
-          if (!zone.labels || !zone.labels.length) return;
-
-          const zoneOffX = pad + zone.x * zoom;
-          const zoneOffY = pad + zone.y * zoom;
-
-          const zc = document.createElement('div');
-          zc.className = 'label-container zone-label-container';
-          zc.dataset.setup  = setupIndex;
-          zc.dataset.row    = r;
-          zc.dataset.col    = c;
-          zc.dataset.zoneId = zone.id;
-          zc.style.left     = zoneOffX + 'px';
-          zc.style.top      = zoneOffY + 'px';
-          zc.style.width    = Math.round(zone.w * zoom) + 'px';
-          zc.style.height   = Math.round(zone.h * zoom) + 'px';
-          zc.style.position = 'absolute';
-          zc.style.pointerEvents = 'none';
-          wrapper.appendChild(zc);
-
-          zone.labels.forEach(lbl => {
-            _createLabelEl(zc, lbl, setupIndex, r, c, zone.w, zone.h, zoom, zone.id);
+          cell.labels.slice(0, 1).forEach(lbl => {
+            _createLabelEl(container, lbl, setupIndex, r, c, rect.w, rect.h, zoom,
+                           null /* no zoneId */);
           });
-        });
+        }
+
+        if (cell.pipZones && cell.pipZones.length) {
+          cell.pipZones.forEach(zone => {
+            if (!zone.labels || !zone.labels.length) return;
+
+            const zoneOffX = pad + zone.x * zoom;
+            const zoneOffY = pad + zone.y * zoom;
+
+            const zc = document.createElement('div');
+            zc.className = 'label-container zone-label-container';
+            zc.dataset.setup  = setupIndex;
+            zc.dataset.row    = r;
+            zc.dataset.col    = c;
+            zc.dataset.zoneId = zone.id;
+            zc.style.left     = zoneOffX + 'px';
+            zc.style.top      = zoneOffY + 'px';
+            zc.style.width    = Math.round(zone.w * zoom) + 'px';
+            zc.style.height   = Math.round(zone.h * zoom) + 'px';
+            zc.style.position = 'absolute';
+            zc.style.pointerEvents = 'none';
+            wrapper.appendChild(zc);
+
+            zone.labels.slice(0, 1).forEach(lbl => {
+              _createLabelEl(zc, lbl, setupIndex, r, c, zone.w, zone.h, zoom, zone.id);
+            });
+          });
+        }
       }
     }
   }
@@ -185,13 +178,15 @@ const LABELS = (() => {
     div.style.top  = Math.round(lbl.y * zoom) + 'px';
     div.style.pointerEvents = 'all';
 
-    // Double-click to open edit tooltip
-    div.addEventListener('dblclick', e => {
+    div.addEventListener('click', e => {
+      if (div.dataset.suppressClick === 'true') {
+        div.dataset.suppressClick = 'false';
+        return;
+      }
       e.stopPropagation();
       _openTooltip(setupIndex, row, col, lbl.id, div, lbl, zoneId);
     });
 
-    // Drag within cell bounds
     _attachLabelDrag(div, setupIndex, row, col, lbl.id, cellW, cellH, zoom, zoneId);
 
     container.appendChild(div);
@@ -199,6 +194,7 @@ const LABELS = (() => {
 
   function _attachLabelDrag(div, setupIndex, row, col, labelId, cellW, cellH, zoom, zoneId) {
     let startX, startY, startLeft, startTop;
+    let moved = false;
 
     div.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
@@ -207,11 +203,15 @@ const LABELS = (() => {
       startY    = e.clientY;
       startLeft = parseInt(div.style.left)  || 0;
       startTop  = parseInt(div.style.top)   || 0;
+      moved = false;
       div.classList.add('dragging');
 
       const onMove = mv => {
         const newLeft = startLeft + (mv.clientX - startX);
         const newTop  = startTop  + (mv.clientY - startY);
+        if (Math.abs(mv.clientX - startX) > 3 || Math.abs(mv.clientY - startY) > 3) {
+          moved = true;
+        }
         const scaledCellW = cellW * zoom;
         const scaledCellH = cellH * zoom;
         const clampedLeft = Math.max(0, Math.min(scaledCellW - div.offsetWidth,  newLeft));
@@ -224,7 +224,7 @@ const LABELS = (() => {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup',   onUp);
         div.classList.remove('dragging');
-        // Persist position back to state
+        if (moved) div.dataset.suppressClick = 'true';
         const nx = parseInt(div.style.left, 10) / zoom;
         const ny = parseInt(div.style.top,  10) / zoom;
         if (zoneId) {
@@ -241,16 +241,23 @@ const LABELS = (() => {
 
   /* ---- Tooltip ---- */
 
-  function _openTooltip(setupIndex, row, col, labelId, labelEl, lbl, zoneId) {
-    _editState = { setupIndex, row, col, labelId, zoneId: zoneId || null };
+  function _openTooltip(setupIndex, row, col, labelId, labelEl, lbl, zoneId, isNew = false) {
+    _editState = {
+      setupIndex,
+      row,
+      col,
+      labelId,
+      zoneId: zoneId || null,
+      isNew,
+      originalText: lbl.text || 'Label',
+      originalColor: lbl.colorClass || COLORS[0].cls
+    };
 
     const inp = txtInput();
     if (inp) inp.value = lbl.text || '';
 
-    // Highlight active swatch
     _setActiveColor(lbl.colorClass, false);
 
-    // Position tooltip near the label
     const tt = tooltip();
     if (!tt) return;
     tt.removeAttribute('hidden');
@@ -279,24 +286,88 @@ const LABELS = (() => {
         btn.classList.toggle('active', btn.dataset.colorClass === colorClass);
       });
     }
-    if (persist && _editState) {
-      if (_editState.zoneId) {
-        STATE.updateZoneLabel(
-          _editState.setupIndex, _editState.row, _editState.col,
-          _editState.zoneId, _editState.labelId, { colorClass }
-        );
-      } else {
-        STATE.updateLabel(
-          _editState.setupIndex, _editState.row, _editState.col,
-          _editState.labelId, { colorClass }
-        );
-      }
-      const lel = document.getElementById(_editState.labelId);
-      if (lel) {
-        COLORS.forEach(c => lel.classList.remove(c.cls));
-        lel.classList.add(colorClass);
-      }
+    if (persist) {
+      _previewDraft();
     }
+  }
+
+  function _previewDraft() {
+    if (!_editState) return;
+    const draft = _getDraft();
+    _applyLabelPreview(_editState.labelId, draft.text, draft.colorClass);
+  }
+
+  function _getDraft() {
+    const inp = txtInput();
+    const active = colorsEl()
+      ? colorsEl().querySelector('.label-color-swatch.active')
+      : null;
+
+    return {
+      text: (inp && inp.value.trim()) || 'Label',
+      colorClass: active ? active.dataset.colorClass : (_editState ? _editState.originalColor : COLORS[0].cls)
+    };
+  }
+
+  function _applyLabelPreview(labelId, text, colorClass) {
+    const lel = document.getElementById(labelId);
+    if (!lel) return;
+    lel.textContent = text || 'Label';
+    COLORS.forEach(c => lel.classList.remove(c.cls));
+    lel.classList.add(colorClass || COLORS[0].cls);
+  }
+
+  function _commitTooltip() {
+    if (!_editState) return;
+    const draft = _getDraft();
+    if (_editState.zoneId) {
+      STATE.updateZoneLabel(
+        _editState.setupIndex, _editState.row, _editState.col,
+        _editState.zoneId, _editState.labelId,
+        { text: draft.text, colorClass: draft.colorClass }
+      );
+    } else {
+      STATE.updateLabel(
+        _editState.setupIndex, _editState.row, _editState.col,
+        _editState.labelId,
+        { text: draft.text, colorClass: draft.colorClass }
+      );
+    }
+    _closeTooltip();
+  }
+
+  function _cancelTooltip() {
+    if (!_editState) return;
+    if (_editState.isNew) {
+      _removeCurrentLabel();
+      return;
+    }
+
+    _applyLabelPreview(_editState.labelId, _editState.originalText, _editState.originalColor);
+    _closeTooltip();
+  }
+
+  function _removeCurrentLabel() {
+    if (!_editState) return;
+    if (_editState.zoneId) {
+      STATE.removeZoneLabel(
+        _editState.setupIndex, _editState.row, _editState.col,
+        _editState.zoneId, _editState.labelId
+      );
+    } else {
+      STATE.removeLabel(
+        _editState.setupIndex, _editState.row, _editState.col, _editState.labelId
+      );
+    }
+    _closeTooltip();
+  }
+
+  function _openExistingLabel(setupIndex, row, col, lbl, zoneId) {
+    const open = () => {
+      const el = document.getElementById(lbl.id);
+      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId);
+    };
+    setTimeout(open, 60);
   }
 
   /* ---- Public: add a new label to a screen cell (called from popover) ---- */
@@ -305,15 +376,18 @@ const LABELS = (() => {
     const cell = STATE.getCell(setupIndex, row, col);
     if (!cell) return;
 
-    // Default position: near top-left of cell
+    const existing = cell.labels && cell.labels[0];
+    if (existing) {
+      _openExistingLabel(setupIndex, row, col, existing, null);
+      return;
+    }
+
     const lbl = STATE.addLabel(setupIndex, row, col, 'Label', 'label-color-sky', 10, 10, 'screen');
     if (!lbl) return;
 
-    // syncLabels fires via state:changed → canvas re-renders, then syncLabels called
-    // Open tooltip right after sync (small delay to let DOM settle)
     setTimeout(() => {
       const el = document.getElementById(lbl.id);
-      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, null);
+      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, null, true);
     }, 60);
   }
 
@@ -325,12 +399,18 @@ const LABELS = (() => {
     const zone = (cell.pipZones || []).find(z => z.id === zoneId);
     if (!zone) return;
 
+    const existing = zone.labels && zone.labels[0];
+    if (existing) {
+      _openExistingLabel(setupIndex, row, col, existing, zoneId);
+      return;
+    }
+
     const lbl = STATE.addZoneLabel(setupIndex, row, col, zoneId, 'Label', 'label-color-sky', 10, 10);
     if (!lbl) return;
 
     setTimeout(() => {
       const el = document.getElementById(lbl.id);
-      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId);
+      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId, true);
     }, 60);
   }
 

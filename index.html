@@ -19,6 +19,7 @@
     <div class="topbar-controls" aria-label="Setup visibility controls">
       <button class="topbar-toggle-setup" id="toggleSetupA" aria-label="Hide or show Setup A">Hide A</button>
       <button class="topbar-toggle-setup" id="toggleSetupB" aria-label="Hide or show Setup B">Hide B</button>
+      <button class="topbar-toggle-setup" id="toggleDropAreas" aria-label="Hide or show drop target areas">Hide Drop Areas</button>
     </div>
   </header>
 
@@ -131,6 +132,12 @@
       <label class="popover-label" for="resolutionPicker">Resolution</label>
       <select class="popover-select" id="resolutionPicker"></select>
 
+      <label class="popover-label" for="orientationPicker">Orientation</label>
+      <select class="popover-select" id="orientationPicker">
+        <option value="landscape">Landscape</option>
+        <option value="portrait">Portrait</option>
+      </select>
+
       <div class="popover-row">
         <div class="pip-zone-selector" id="pipZoneSelector" role="group" aria-label="PiP zones">
           <button class="btn-pip-zone" data-count="0">Off</button>
@@ -148,7 +155,11 @@
   <div class="label-tooltip" id="labelTooltip" hidden>
     <input type="text" id="labelTextInput" maxlength="30" placeholder="Label text…" aria-label="Label text" />
     <div class="label-colors" id="labelColors" role="group" aria-label="Label color"></div>
-    <button class="btn-remove-label" id="removeLabelBtn">Remove</button>
+    <div class="label-actions">
+      <button class="btn-label-action btn-label-ok" id="labelOkBtn">OK</button>
+      <button class="btn-label-action btn-label-cancel" id="labelCancelBtn">Cancel</button>
+      <button class="btn-remove-label" id="removeLabelBtn">Remove</button>
+    </div>
   </div>
 
   <!-- GRID-FULL TOAST -->

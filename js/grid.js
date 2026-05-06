@@ -41,6 +41,20 @@ const GRID = (() => {
     if (!isNaN(parsed) && parsed > 0) _mmScale = parsed;
   }
 
+  function _physicalSizeForCell(cell, monitor) {
+    if (cell && cell.orientation === 'portrait') {
+      return {
+        width_mm: monitor.physicalHeight_mm,
+        height_mm: monitor.physicalWidth_mm
+      };
+    }
+
+    return {
+      width_mm: monitor.physicalWidth_mm,
+      height_mm: monitor.physicalHeight_mm
+    };
+  }
+
   /**
    * Compute column widths and row heights for a given setup grid.
    * Returns { colWidths: number[], rowHeights: number[], colWidths_mm: number[], rowHeights_mm: number[] }
@@ -57,8 +71,9 @@ const GRID = (() => {
         if (!cell) continue;
         const mon = CATALOG.find(m => m.id === cell.monitorId);
         if (!mon) continue;
-        if (mon.physicalWidth_mm  > colWidths_mm[c])  colWidths_mm[c]  = mon.physicalWidth_mm;
-        if (mon.physicalHeight_mm > rowHeights_mm[r]) rowHeights_mm[r] = mon.physicalHeight_mm;
+        const physicalSize = _physicalSizeForCell(cell, mon);
+        if (physicalSize.width_mm  > colWidths_mm[c])  colWidths_mm[c]  = physicalSize.width_mm;
+        if (physicalSize.height_mm > rowHeights_mm[r]) rowHeights_mm[r] = physicalSize.height_mm;
       }
     }
 

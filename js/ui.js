@@ -15,29 +15,54 @@ const POPOVER = (() => {
   const el   = id => document.getElementById(id);
   const popEl = () => el('monitorPopover');
 
-  function show(setupIndex, row, col, monitorGroupEl, rect) {
-    _current = { setupIndex, row, col };
-    const cell    = STATE.getCell(setupIndex, row, col);
-    const monitor = cell ? CATALOG.find(m => m.id === cell.monitorId) : null;
-    if (!monitor) return;
+  function _resolutionTierTag(width, height) {
+    const longEdge = Math.max(width || 0, height || 0);
+    const shortEdge = Math.min(width || 0, height || 0);
 
-    // Title
+    if ((longEdge === 8192 && shortEdge === 4320) || (longEdge === 7680 && shortEdge === 4320)) {
+      return ' (8K)';
+    }
+    if ((longEdge === 4096 && shortEdge === 2160) || (longEdge === 3840 && shortEdge === 2160)) {
+      return ' (4K)';
+    }
+    if ((longEdge === 2560 && shortEdge === 1440) || (longEdge === 2048 && shortEdge === 1080)) {
+      return ' (2K)';
+    }
+    return '';
+  }
+
+  function _formatResolution(resolution, orientation) {
+    const width = orientation === 'portrait' ? resolution.height : resolution.width;
+    const height = orientation === 'portrait' ? resolution.width : resolution.height;
+    return `${width}×${height}${_resolutionTierTag(width, height)} (${resolution.refresh}Hz)`;
+  }
+
+  function _syncPopoverFields() {
+    if (!_current) return null;
+
+    const cell = STATE.getCell(_current.setupIndex, _current.row, _current.col);
+    const monitor = cell ? CATALOG.find(m => m.id === cell.monitorId) : null;
+    if (!monitor) return null;
+
     el('popoverTitle').textContent = `${monitor.size}" ${monitor.brand} — ${monitor.modelName}`;
 
-    // Resolution picker
     const resPicker = el('resolutionPicker');
-    resPicker.innerHTML = '';
-    monitor.resolutions.forEach((res, i) => {
-      const opt = document.createElement('option');
-      opt.value = i;
-      opt.textContent = res.label;
-      if (cell.selectedResolution && res.label === cell.selectedResolution.label) {
-        opt.selected = true;
-      }
-      resPicker.appendChild(opt);
-    });
+    if (resPicker) {
+      resPicker.innerHTML = '';
+      monitor.resolutions.forEach((res, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = _formatResolution(res, cell.orientation || 'landscape');
+        if (cell.selectedResolution && res.label === cell.selectedResolution.label) {
+          opt.selected = true;
+        }
+        resPicker.appendChild(opt);
+      });
+    }
 
-    // PiP zone selector
+    const orientationPicker = el('orientationPicker');
+    if (orientationPicker) orientationPicker.value = cell.orientation || 'landscape';
+
     const selector = el('pipZoneSelector');
     if (selector) {
       const currentCount = cell.pipZones ? cell.pipZones.length : 0;
@@ -48,6 +73,14 @@ const POPOVER = (() => {
         btn.classList.toggle('active', count === currentCount);
       });
     }
+
+    return { cell, monitor };
+  }
+
+  function show(setupIndex, row, col, monitorGroupEl, rect) {
+    _current = { setupIndex, row, col };
+    const data = _syncPopoverFields();
+    if (!data) return;
 
     // Position popover near the clicked monitor
     const svg = CANVAS.getSvg(setupIndex);
@@ -96,6 +129,12 @@ const POPOVER = (() => {
       STATE.setResolution(_current.setupIndex, _current.row, _current.col, monitor.resolutions[idx]);
     });
 
+    el('orientationPicker').addEventListener('change', e => {
+      if (!_current) return;
+      STATE.setOrientation(_current.setupIndex, _current.row, _current.col, e.target.value);
+      CANVAS.openCellPopover(_current.setupIndex, _current.row, _current.col);
+    });
+
     // PiP zone selector buttons
     const selector = el('pipZoneSelector');
     if (selector) {
@@ -113,8 +152,9 @@ const POPOVER = (() => {
 
     el('addLabelBtn').addEventListener('click', () => {
       if (!_current) return;
+      const current = { ..._current };
       hide();
-      LABELS.addLabel(_current.setupIndex, _current.row, _current.col);
+      LABELS.addLabel(current.setupIndex, current.row, current.col);
     });
 
     el('removeMonitorBtn').addEventListener('click', () => {
@@ -140,7 +180,23 @@ const POPOVER = (() => {
    UI — Catalog rendering, setup controls, info strip
    ================================================================ */
 const UI = (() => {
-  const setupVisible = [true, true];
+  const setupVisible = [true, false];
+
+  function _resolutionTierTag(width, height) {
+    const longEdge = Math.max(width || 0, height || 0);
+    const shortEdge = Math.min(width || 0, height || 0);
+
+    if ((longEdge === 8192 && shortEdge === 4320) || (longEdge === 7680 && shortEdge === 4320)) {
+      return ' (8K)';
+    }
+    if ((longEdge === 4096 && shortEdge === 2160) || (longEdge === 3840 && shortEdge === 2160)) {
+      return ' (4K)';
+    }
+    if ((longEdge === 2560 && shortEdge === 1440) || (longEdge === 2048 && shortEdge === 1080)) {
+      return ' (2K)';
+    }
+    return '';
+  }
 
   function init() {
     _renderCatalog(null);
@@ -151,6 +207,7 @@ const UI = (() => {
     _bindZoomControls();
     _bindWheelZoom();
     _bindSetupVisibilityControls();
+    _bindDropAreasToggle();
     _bindVideoPanel();
     _bindKeyboard();
     _bindAddMonitorBtn();
@@ -159,6 +216,7 @@ const UI = (() => {
     _updateZoomReadout(0);
     _updateZoomReadout(1);
     _applySetupVisibility();
+    _syncDropAreasToggle();
 
     document.addEventListener('state:changed', e => {
       _updateInfoStrip(e.detail.setupIndex);
@@ -166,6 +224,25 @@ const UI = (() => {
       // Re-attach SVG drop targets after each re-render
       DRAG.attachSvgDropTargets();
     });
+  }
+
+  function _bindDropAreasToggle() {
+    const btn = document.getElementById('toggleDropAreas');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const next = !CANVAS.isDropAreasVisible();
+      CANVAS.setDropAreasVisible(next);
+      DRAG.attachSvgDropTargets();
+      _syncDropAreasToggle();
+    });
+  }
+
+  function _syncDropAreasToggle() {
+    const btn = document.getElementById('toggleDropAreas');
+    if (!btn) return;
+    const visible = CANVAS.isDropAreasVisible();
+    btn.textContent = visible ? 'Hide Drop Areas' : 'Show Drop Areas';
+    btn.classList.toggle('showing-hidden', !visible);
   }
 
   /* ---- Catalog ---- */
@@ -206,7 +283,7 @@ const UI = (() => {
       const meta = document.createElement('div');
       meta.className = 'card-meta';
       const maxRes = mon.resolutions[0];
-      meta.textContent = `${mon.panelType} · ${maxRes.width}×${maxRes.height}`;
+      meta.textContent = `${mon.panelType} · ${maxRes.width}×${maxRes.height}${_resolutionTierTag(maxRes.width, maxRes.height)}`;
       info.appendChild(meta);
 
       card.appendChild(info);
@@ -261,6 +338,7 @@ const UI = (() => {
         for (let c = 0; c < GRID.MAX_COLS; c++) {
           if (GRID.canPlace(si, r, c)) {
             STATE.placeMonitor(si, r, c, monitorId);
+            CANVAS.openCellPopover(si, r, c);
             return;
           }
         }

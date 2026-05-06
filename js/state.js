@@ -12,6 +12,9 @@
  * GridCell:
  *   monitorId: string       — catalog id
  *   selectedResolution: object  — one of monitor.resolutions[i]
+ *   orientation: 'landscape'|'portrait'
+ *   offsetX: number         — intrinsic SVG px offset from cell origin (manual alignment)
+ *   offsetY: number         — intrinsic SVG px offset from cell origin (manual alignment)
  *   pipZones: PipZone[]     — empty = PiP off; 2/3/4 zones = active
  *   labels: Label[]         — screen-level labels
  *   streamId: string|null   — experimental video composition
@@ -86,10 +89,14 @@ const STATE = (() => {
     ws.setups[setupIndex].grid[row][col] = {
       monitorId,
       selectedResolution: monitor.resolutions[0],
+      orientation: 'landscape',
+      offsetX: 0,
+      offsetY: 0,
       pipZones: [],
       labels: [],
       streamId: null
     };
+    _reflowActivePipZones(setupIndex, null, true);
     _emit(setupIndex);
     return true;
   }
@@ -107,6 +114,7 @@ const STATE = (() => {
         _selected.col === col) {
       _selected = null;
     }
+    _reflowActivePipZones(setupIndex, null, true);
     _emit(setupIndex);
   }
 
@@ -126,8 +134,12 @@ const STATE = (() => {
     ws.setups[toSetup].grid[toRow][toCol] = src;
     ws.setups[fromSetup].grid[fromRow][fromCol] = dst; // null or swap
 
+    _reflowActivePipZones(fromSetup, null, true);
     _emit(fromSetup);
-    if (toSetup !== fromSetup) _emit(toSetup);
+    if (toSetup !== fromSetup) {
+      _reflowActivePipZones(toSetup, null, true);
+      _emit(toSetup);
+    }
   }
 
   /**
@@ -138,6 +150,131 @@ const STATE = (() => {
     const cell = ws.setups[setupIndex].grid[row][col];
     if (!cell) return;
     cell.selectedResolution = resolution;
+    _emit(setupIndex);
+  }
+
+  function setMonitorOffset(setupIndex, row, col, offsetX, offsetY) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return;
+
+    const nextX = Number.isFinite(offsetX) ? offsetX : 0;
+    const nextY = Number.isFinite(offsetY) ? offsetY : 0;
+    if (cell.offsetX === nextX && cell.offsetY === nextY) return;
+
+    cell.offsetX = nextX;
+    cell.offsetY = nextY;
+
+    if (cell.pipZones && cell.pipZones.length) {
+      _rebuildPipZones(setupIndex, row, col, undefined, true);
+    }
+    _emit(setupIndex);
+  }
+
+  function resetMonitorOffset(setupIndex, row, col) {
+    setMonitorOffset(setupIndex, row, col, 0, 0);
+  }
+
+  function _rebuildPipZones(setupIndex, row, col, count, preserveLabels, orientationOverride) {
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return;
+
+    const zoneCount = count !== undefined ? count : ((cell.pipZones || []).length);
+    if (!zoneCount) {
+      cell.pipZones = [];
+      return;
+    }
+
+    const monitor = CATALOG.find(m => m.id === cell.monitorId);
+    if (!monitor || !monitor.pipSupported) return;
+
+    const dims = GRID.calcDimensions(setupIndex);
+    const cellRect = GRID.cellRect(dims.colWidths, dims.rowHeights, row, col);
+    const physicalW = cell.orientation === 'portrait'
+      ? monitor.physicalHeight_mm
+      : monitor.physicalWidth_mm;
+    const physicalH = cell.orientation === 'portrait'
+      ? monitor.physicalWidth_mm
+      : monitor.physicalHeight_mm;
+    const rect = {
+      x: cellRect.x + (cell.offsetX || 0),
+      y: cellRect.y + (cell.offsetY || 0),
+      w: GRID.mmToDisplay(physicalW),
+      h: GRID.mmToDisplay(physicalH)
+    };
+    const previousZones = cell.pipZones || [];
+    const nextZones = PIP.calcZonePreset(
+      rect,
+      zoneCount,
+      monitor,
+      orientationOverride || cell.orientation || 'landscape'
+    );
+
+    if (preserveLabels) {
+      nextZones.forEach((zone, idx) => {
+        zone.labels = previousZones[idx] && previousZones[idx].labels
+          ? previousZones[idx].labels.slice(0, 1)
+          : [];
+      });
+    }
+
+    cell.pipZones = nextZones;
+  }
+
+  function _inferPipOrientation(cell) {
+    if (!cell || !cell.pipZones || cell.pipZones.length < 2) {
+      return cell && cell.orientation ? cell.orientation : 'landscape';
+    }
+
+    const zones = cell.pipZones;
+
+    if (zones.length === 2) {
+      const z0cX = zones[0].x + zones[0].w / 2;
+      const z0cY = zones[0].y + zones[0].h / 2;
+      const z1cX = zones[1].x + zones[1].w / 2;
+      const z1cY = zones[1].y + zones[1].h / 2;
+      return Math.abs(z1cY - z0cY) > Math.abs(z1cX - z0cX)
+        ? 'portrait'
+        : 'landscape';
+    }
+
+    if (zones.length === 3) {
+      const z0 = zones[0];
+      const z1 = zones[1];
+      const z2 = zones[2];
+      const stackedBottom = Math.abs(z1.y - z2.y) <= 2 && z0.y < z1.y;
+      return (z0.w > z0.h && stackedBottom) ? 'portrait' : 'landscape';
+    }
+
+    return cell.orientation || 'landscape';
+  }
+
+  function _reflowActivePipZones(setupIndex, excludeCell, preserveTopology) {
+    const setup = ws.setups[setupIndex];
+    if (!setup) return;
+
+    for (let r = 0; r < setup.grid.length; r++) {
+      for (let c = 0; c < setup.grid[r].length; c++) {
+        const cell = setup.grid[r][c];
+        if (!cell || !cell.pipZones || !cell.pipZones.length) continue;
+        if (excludeCell && excludeCell.row === r && excludeCell.col === c) continue;
+        const orientationOverride = preserveTopology ? _inferPipOrientation(cell) : undefined;
+        _rebuildPipZones(setupIndex, r, c, cell.pipZones.length, true, orientationOverride);
+      }
+    }
+  }
+
+  function setOrientation(setupIndex, row, col, orientation) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return;
+
+    const nextOrientation = orientation === 'portrait' ? 'portrait' : 'landscape';
+    if (cell.orientation === nextOrientation) return;
+
+    cell.orientation = nextOrientation;
+    _rebuildPipZones(setupIndex, row, col, undefined, true);
+    _reflowActivePipZones(setupIndex, { row, col }, true);
     _emit(setupIndex);
   }
 
@@ -154,10 +291,7 @@ const STATE = (() => {
     if (count === 0) {
       cell.pipZones = [];
     } else {
-      // Compute geometry via GRID + PIP (both defined by the time this runs)
-      const dims = GRID.calcDimensions(setupIndex);
-      const rect = GRID.cellRect(dims.colWidths, dims.rowHeights, row, col);
-      cell.pipZones = PIP.calcZonePreset(rect, count, monitor);
+      _rebuildPipZones(setupIndex, row, col, count, false);
     }
     _emit(setupIndex);
   }
@@ -178,7 +312,7 @@ const STATE = (() => {
       x: x || 10,
       y: y || 10
     };
-    zone.labels.push(label);
+    zone.labels = [label];
     _emit(setupIndex);
     return label;
   }
@@ -226,7 +360,7 @@ const STATE = (() => {
       y: y || 10,
       placement: placement || 'screen'
     };
-    cell.labels.push(label);
+    cell.labels = [label];
     _emit(setupIndex);
     return label;
   }
@@ -316,7 +450,8 @@ const STATE = (() => {
 
   return {
     placeMonitor, removeMonitor, moveMonitor,
-    setResolution, setPipZones,
+    setResolution, setOrientation, setPipZones,
+    setMonitorOffset, resetMonitorOffset,
     addLabel, updateLabel, removeLabel,
     addZoneLabel, updateZoneLabel, removeZoneLabel,
     setStream, clearStreams,

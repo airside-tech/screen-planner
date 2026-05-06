@@ -30,6 +30,18 @@
   stroke-width: 2;
 }
 
+.cell-empty.drop-area-hidden {
+  fill: transparent;
+  stroke: transparent;
+  stroke-dasharray: none;
+  pointer-events: none;
+}
+
+.empty-cell-hint-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Placed monitor body */
 .monitor-body {
   fill: var(--color-surface, #22262f);
@@ -49,6 +61,12 @@
 .monitor-screen {
   fill: #0d1117;
   rx: 2;
+}
+
+.monitor-info-backdrop {
+  fill: rgba(0, 0, 0, 0.55);
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
 }
 
 /* Monitor label text (size + resolution) */
@@ -182,6 +200,16 @@
   font-size: 22px;
   font-weight: 800;
   fill: rgba(240, 165, 0, 0.35);
+  dominant-baseline: middle;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.pip-zone-maxres {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  fill: rgba(255, 255, 255, 0.88);
   dominant-baseline: middle;
   text-anchor: middle;
   pointer-events: none;
