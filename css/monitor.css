@@ -1,0 +1,218 @@
+/* ============================================================
+   SCREEN PLANNER — monitor.css
+   SVG monitor cells, grid, dimension annotations
+   ============================================================ */
+
+/* SVG base */
+.layout-svg {
+  overflow: visible;
+}
+
+/* Empty cell placeholder */
+.cell-empty {
+  fill: var(--color-surface2, #2a2f3b);
+  stroke: var(--color-border, #3a3f4d);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+  rx: 4;
+  cursor: default;
+  transition: fill 0.15s, stroke 0.15s;
+}
+.cell-empty.drag-over {
+  fill: rgba(74, 158, 255, 0.1);
+  stroke: var(--color-accent, #4a9eff);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+.cell-empty.drag-invalid {
+  fill: rgba(224, 85, 85, 0.1);
+  stroke: var(--color-danger, #e05555);
+  stroke-width: 2;
+}
+
+/* Placed monitor body */
+.monitor-body {
+  fill: var(--color-surface, #22262f);
+  stroke: var(--color-border, #3a3f4d);
+  stroke-width: 1.5;
+  rx: 4;
+  cursor: pointer;
+  transition: stroke 0.12s;
+}
+.monitor-body:hover,
+.monitor-body.selected {
+  stroke: var(--color-accent, #4a9eff);
+  stroke-width: 2.5;
+}
+
+/* Monitor bezel inner screen area */
+.monitor-screen {
+  fill: #0d1117;
+  rx: 2;
+}
+
+/* Monitor label text (size + resolution) */
+.monitor-label-size {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  fill: var(--color-accent, #4a9eff);
+  dominant-baseline: auto;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.monitor-label-res {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 400;
+  fill: var(--color-text-dim, #8a90a4);
+  dominant-baseline: auto;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.monitor-label-brand {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 9px;
+  fill: var(--color-text-dim, #8a90a4);
+  dominant-baseline: auto;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* Drag-in ghost overlay on monitor */
+.monitor-drag-ghost {
+  fill: rgba(74, 158, 255, 0.18);
+  stroke: var(--color-accent, #4a9eff);
+  stroke-width: 2;
+  stroke-dasharray: 5 3;
+  rx: 4;
+  pointer-events: none;
+}
+
+/* PiP area inside a monitor */
+.pip-body {
+  fill: rgba(13, 17, 23, 0.85);
+  stroke: var(--color-accent2, #f0a500);
+  stroke-width: 1.5;
+  rx: 3;
+  cursor: pointer;
+}
+.pip-body:hover {
+  stroke-width: 2.5;
+}
+
+.pip-label-text {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 8px;
+  fill: var(--color-accent2, #f0a500);
+  dominant-baseline: auto;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.pip-resize-handle {
+  fill: var(--color-accent2, #f0a500);
+  cursor: nwse-resize;
+}
+
+/* Dimension annotation lines */
+.dim-line {
+  stroke: var(--color-text-dim, #8a90a4);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.dim-arrow {
+  stroke: var(--color-text-dim, #8a90a4);
+  stroke-width: 1;
+  fill: none;
+}
+
+.dim-text {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  fill: var(--color-text-dim, #8a90a4);
+  dominant-baseline: auto;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* Selected state ring */
+.monitor-selected-ring {
+  fill: none;
+  stroke: var(--color-accent, #4a9eff);
+  stroke-width: 2;
+  stroke-dasharray: none;
+  rx: 6;
+  pointer-events: none;
+}
+
+/* Stream overlay (video composition experimental) */
+.stream-overlay {
+  fill: rgba(74, 158, 255, 0.25);
+  rx: 3;
+  pointer-events: none;
+}
+
+.stream-overlay-text {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--color-accent, #4a9eff);
+  dominant-baseline: middle;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* ---- Multi-zone PiP (Screen Splitter) ---- */
+
+.pip-zone-body {
+  fill: rgba(240, 165, 0, 0.12);
+  stroke: var(--color-accent2, #f0a500);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+  rx: 3;
+  pointer-events: none;
+}
+
+.pip-zone-index {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  fill: rgba(240, 165, 0, 0.35);
+  dominant-baseline: middle;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* + add-label affordance */
+.pip-zone-add-label {
+  cursor: pointer;
+}
+
+.pip-zone-add-label-bg {
+  fill: rgba(240, 165, 0, 0.20);
+  stroke: var(--color-accent2, #f0a500);
+  stroke-width: 1;
+  rx: 2;
+}
+
+.pip-zone-add-label:hover .pip-zone-add-label-bg {
+  fill: var(--color-accent2, #f0a500);
+}
+
+.pip-zone-add-label-text {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  fill: var(--color-accent2, #f0a500);
+  dominant-baseline: middle;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.pip-zone-add-label:hover .pip-zone-add-label-text {
+  fill: #000;
+}

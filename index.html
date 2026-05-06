@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Screen Planner</title>
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/panel.css" />
+  <link rel="stylesheet" href="css/monitor.css" />
+  <link rel="stylesheet" href="css/labels.css" />
+</head>
+<body>
+
+  <!-- TOP NAV -->
+  <header class="topbar">
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle monitor catalog">&#9776;</button>
+    <h1 class="app-title">Screen Planner</h1>
+    <span class="app-subtitle">2D Monitor Layout Tool</span>
+    <div class="topbar-controls" aria-label="Setup visibility controls">
+      <button class="topbar-toggle-setup" id="toggleSetupA" aria-label="Hide or show Setup A">Hide A</button>
+      <button class="topbar-toggle-setup" id="toggleSetupB" aria-label="Hide or show Setup B">Hide B</button>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <div class="app-layout" id="appLayout">
+
+    <!-- SIDEBAR: Monitor Catalog -->
+    <aside class="sidebar" id="sidebar" aria-label="Monitor Catalog">
+      <div class="sidebar-header">
+        <h2>Monitor Catalog</h2>
+      </div>
+
+      <div class="sidebar-section">
+        <label class="filter-label" for="sizeFilter">Filter by size</label>
+        <select id="sizeFilter" class="filter-select">
+          <option value="all">All sizes</option>
+          <option value="21">21"</option>
+          <option value="24">24"</option>
+          <option value="27">27"</option>
+          <option value="32">32"</option>
+          <option value="43">43"</option>
+          <option value="49">49"</option>
+          <option value="65">65"</option>
+        </select>
+      </div>
+
+      <div class="catalog-list" id="catalogList" role="list" aria-label="Drag monitors to a setup">
+        <!-- Populated by ui.js -->
+      </div>
+
+      <div class="sidebar-section sidebar-hint">
+        <p>Drag a monitor onto an empty cell in a setup to place it.</p>
+      </div>
+
+      <!-- Add custom monitor -->
+      <div class="sidebar-section">
+        <button class="btn-add-monitor" id="addMonitorBtn">+ Add Monitor</button>
+      </div>
+
+      <!-- Label creator -->
+      <div class="sidebar-section">
+        <h3>Labels</h3>
+        <p class="sidebar-hint-text">Click a placed monitor, then use "Add Label" in its popover.</p>
+      </div>
+    </aside>
+
+    <!-- SETUPS CONTAINER -->
+    <main class="setups-container" id="setupsContainer">
+
+      <!-- SETUP A -->
+      <section class="setup" id="setupA" data-setup="0">
+        <div class="setup-header">
+          <span class="setup-badge badge-a">A</span>
+          <span class="setup-title" id="titleA" contenteditable="true" aria-label="Setup A name">Setup A</span>
+          <div class="setup-info" id="infoA">
+            <span class="info-item" id="widthA">Width: —</span>
+            <span class="info-sep">|</span>
+            <span class="info-item" id="heightA">Height: —</span>
+          </div>
+          <div class="setup-controls" aria-label="Setup A zoom controls">
+            <button class="btn-zoom" id="zoomOutA" title="Zoom out Setup A">-</button>
+            <span class="zoom-value" id="zoomValueA">100%</span>
+            <button class="btn-zoom" id="zoomInA" title="Zoom in Setup A">+</button>
+            <button class="btn-fit" id="zoomFitA" title="Fit Setup A to window">Fit</button>
+            <button class="btn-hide" id="hideA" title="Hide Setup A">Hide</button>
+          </div>
+          <button class="btn-clear" id="clearA" title="Clear all monitors from Setup A">Clear</button>
+        </div>
+        <div class="canvas-wrapper" id="canvasWrapperA">
+          <svg class="layout-svg" id="svgA" role="img" aria-label="Setup A layout canvas"></svg>
+        </div>
+      </section>
+
+      <div class="setup-divider" role="separator"></div>
+
+      <!-- SETUP B -->
+      <section class="setup" id="setupB" data-setup="1">
+        <div class="setup-header">
+          <span class="setup-badge badge-b">B</span>
+          <span class="setup-title" id="titleB" contenteditable="true" aria-label="Setup B name">Setup B</span>
+          <div class="setup-info" id="infoB">
+            <span class="info-item" id="widthB">Width: —</span>
+            <span class="info-sep">|</span>
+            <span class="info-item" id="heightB">Height: —</span>
+          </div>
+          <div class="setup-controls" aria-label="Setup B zoom controls">
+            <button class="btn-zoom" id="zoomOutB" title="Zoom out Setup B">-</button>
+            <span class="zoom-value" id="zoomValueB">100%</span>
+            <button class="btn-zoom" id="zoomInB" title="Zoom in Setup B">+</button>
+            <button class="btn-fit" id="zoomFitB" title="Fit Setup B to window">Fit</button>
+            <button class="btn-hide" id="hideB" title="Hide Setup B">Hide</button>
+          </div>
+          <button class="btn-clear" id="clearB" title="Clear all monitors from Setup B">Clear</button>
+        </div>
+        <div class="canvas-wrapper" id="canvasWrapperB">
+          <svg class="layout-svg" id="svgB" role="img" aria-label="Setup B layout canvas"></svg>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- MONITOR POPOVER (shared, moved in DOM by JS) -->
+  <div class="popover" id="monitorPopover" role="dialog" aria-modal="true" aria-label="Monitor options" hidden>
+    <div class="popover-header">
+      <span class="popover-title" id="popoverTitle">Monitor</span>
+      <button class="popover-close" id="popoverClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="popover-body">
+      <label class="popover-label" for="resolutionPicker">Resolution</label>
+      <select class="popover-select" id="resolutionPicker"></select>
+
+      <div class="popover-row">
+        <div class="pip-zone-selector" id="pipZoneSelector" role="group" aria-label="PiP zones">
+          <button class="btn-pip-zone" data-count="0">Off</button>
+          <button class="btn-pip-zone" data-count="2">2</button>
+          <button class="btn-pip-zone" data-count="3">3</button>
+          <button class="btn-pip-zone" data-count="4">4</button>
+        </div>
+        <button class="btn-addlabel" id="addLabelBtn">Add Label</button>
+      </div>
+      <button class="btn-remove" id="removeMonitorBtn">Remove Monitor</button>
+    </div>
+  </div>
+
+  <!-- LABEL EDIT TOOLTIP -->
+  <div class="label-tooltip" id="labelTooltip" hidden>
+    <input type="text" id="labelTextInput" maxlength="30" placeholder="Label text…" aria-label="Label text" />
+    <div class="label-colors" id="labelColors" role="group" aria-label="Label color"></div>
+    <button class="btn-remove-label" id="removeLabelBtn">Remove</button>
+  </div>
+
+  <!-- GRID-FULL TOAST -->
+  <div class="toast" id="gridToast" role="alert" aria-live="assertive" hidden>Grid full — maximum 2 rows × 4 columns reached.</div>
+
+  <!-- EXPERIMENTAL: Video Composition Panel -->
+  <details class="video-panel" id="videoPanel">
+    <summary class="video-panel-summary">&#9654; Experimental: Video Composition</summary>
+    <div class="video-panel-body">
+      <p class="video-hint">Paste a JSON stream mapping below and press <strong>Test</strong> to preview stream assignments on the layouts.</p>
+      <textarea id="compositionInput" class="composition-textarea" rows="6" placeholder='{"streams": [{"id": "cam1", "setup": 0, "row": 0, "col": 0}, ...]}'></textarea>
+      <div class="video-actions">
+        <button class="btn-test" id="testComposition">Test</button>
+        <button class="btn-clear-video" id="clearComposition">Clear</button>
+      </div>
+      <div class="video-error" id="videoError" hidden></div>
+    </div>
+  </details>
+
+  <!-- ADD CUSTOM MONITOR DIALOG -->
+  <dialog id="monitorFormDialog" aria-label="Add custom monitor" class="monitor-form-dialog">
+    <form id="monitorForm" method="dialog" novalidate>
+      <div class="mf-header">
+        <h2 class="mf-title">Add Monitor</h2>
+        <button type="button" class="mf-close" id="monitorFormClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="mf-body">
+        <div class="mf-row">
+          <label class="mf-label" for="mfBrand">Brand</label>
+          <input class="mf-input" type="text" id="mfBrand" placeholder="e.g. Samsung" maxlength="40" required />
+        </div>
+        <div class="mf-row">
+          <label class="mf-label" for="mfModel">Model name</label>
+          <input class="mf-input" type="text" id="mfModel" placeholder="e.g. Odyssey G9" maxlength="60" required />
+        </div>
+        <div class="mf-row mf-row-3">
+          <div>
+            <label class="mf-label" for="mfSize">Size (inches)</label>
+            <input class="mf-input" type="number" id="mfSize" min="10" max="120" step="0.1" placeholder="27" required />
+          </div>
+          <div>
+            <label class="mf-label" for="mfWidth">Width (mm)</label>
+            <input class="mf-input" type="number" id="mfWidth" min="100" max="3000" placeholder="614" required />
+          </div>
+          <div>
+            <label class="mf-label" for="mfHeight">Height (mm)</label>
+            <input class="mf-input" type="number" id="mfHeight" min="50" max="2000" placeholder="346" required />
+          </div>
+        </div>
+        <div class="mf-row mf-row-2">
+          <div>
+            <label class="mf-label" for="mfPanel">Panel type</label>
+            <select class="mf-input" id="mfPanel">
+              <option value="IPS">IPS</option>
+              <option value="VA">VA</option>
+              <option value="OLED">OLED</option>
+              <option value="TN">TN</option>
+              <option value="Mini-LED">Mini-LED</option>
+              <option value="QD-OLED">QD-OLED</option>
+            </select>
+          </div>
+          <div class="mf-pip-row">
+            <label class="mf-label mf-checkbox-label" for="mfPip">
+              <input type="checkbox" id="mfPip" />
+              PiP supported
+            </label>
+          </div>
+        </div>
+        <div class="mf-section-title">Resolutions</div>
+        <div id="mfResolutionList" class="mf-res-list"></div>
+        <button type="button" class="mf-add-res" id="mfAddResBtn">+ Add Resolution</button>
+      </div>
+      <div class="mf-footer">
+        <span class="mf-error" id="mfError"></span>
+        <button type="button" class="mf-btn-cancel" id="monitorFormCancel">Cancel</button>
+        <button type="button" class="mf-btn-save" id="monitorFormSave">Save Monitor</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- SCRIPTS (order matters) -->
+  <script src="js/catalog.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/grid.js"></script>
+  <script src="js/canvas.js"></script>
+  <script src="js/drag.js"></script>
+  <script src="js/labels.js"></script>
+  <script src="js/pip.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

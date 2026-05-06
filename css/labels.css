@@ -1,0 +1,132 @@
+/* ============================================================
+   SCREEN PLANNER — labels.css
+   Draggable DOM label overlays and label edit tooltip
+   ============================================================ */
+
+/* Container that sits over each monitor SVG cell */
+.label-container {
+  position: absolute;
+  pointer-events: none; /* children opt in */
+  overflow: visible;
+  top: 0; left: 0;
+  width: 0; height: 0;
+}
+
+/* Individual label */
+.screen-label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  word-break: break-word;
+  cursor: move;
+  user-select: none;
+  pointer-events: all;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.5);
+  border: 1.5px solid rgba(255,255,255,0.18);
+  transition: box-shadow 0.12s, transform 0.1s;
+  z-index: 10;
+  line-height: 1.3;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screen-label:hover {
+  box-shadow: 0 2px 10px rgba(0,0,0,0.7);
+  z-index: 20;
+}
+
+.screen-label.selected {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  z-index: 30;
+}
+
+.screen-label.dragging {
+  opacity: 0.7;
+  transform: scale(1.05);
+  cursor: grabbing;
+  z-index: 50;
+}
+
+/* Label color presets */
+.label-color-sky    { background: #1e7fcb; color: #fff; }
+.label-color-teal   { background: #1a8f78; color: #fff; }
+.label-color-amber  { background: #d97706; color: #fff; }
+.label-color-violet { background: #7c3aed; color: #fff; }
+.label-color-rose   { background: #be185d; color: #fff; }
+
+/* Label edit tooltip */
+.label-tooltip {
+  position: fixed;
+  background: var(--color-surface, #22262f);
+  border: 1px solid var(--color-accent, #4a9eff);
+  border-radius: var(--radius, 6px);
+  padding: 10px 12px;
+  z-index: 600;
+  box-shadow: var(--shadow, 0 2px 12px rgba(0,0,0,0.45));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.label-tooltip[hidden] { display: none; }
+
+#labelTextInput {
+  background: var(--color-surface2, #2a2f3b);
+  border: 1px solid var(--color-border, #3a3f4d);
+  color: var(--color-text, #e0e4ef);
+  border-radius: 3px;
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+  width: 100%;
+}
+#labelTextInput:focus { box-shadow: 0 0 0 2px var(--color-accent, #4a9eff); }
+
+.label-colors {
+  display: flex;
+  gap: 6px;
+}
+
+.label-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.12s, transform 0.1s;
+}
+.label-color-swatch:hover { transform: scale(1.2); }
+.label-color-swatch.active { border-color: #fff; }
+.swatch-sky    { background: #1e7fcb; }
+.swatch-teal   { background: #1a8f78; }
+.swatch-amber  { background: #d97706; }
+.swatch-violet { background: #7c3aed; }
+.swatch-rose   { background: #be185d; }
+
+.btn-remove-label {
+  padding: 5px;
+  background: transparent;
+  border: 1px solid var(--color-danger, #e05555);
+  color: var(--color-danger, #e05555);
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.12s;
+}
+.btn-remove-label:hover {
+  background: var(--color-danger, #e05555);
+  color: #fff;
+}
