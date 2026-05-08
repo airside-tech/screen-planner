@@ -41,6 +41,12 @@ html, body {
   overflow: auto;
 }
 
+body.is-dragging-monitor,
+body.is-dragging-monitor * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* --- Topbar --- */
 .topbar {
   position: fixed;
@@ -278,6 +284,26 @@ html, body {
 .btn-clear:hover {
   border-color: var(--color-danger);
   color: var(--color-danger);
+}
+
+.btn-save-setup,
+.btn-load-setup {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all var(--transition);
+}
+.btn-save-setup:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+.btn-load-setup:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 /* --- Canvas Wrapper --- */

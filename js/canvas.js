@@ -12,7 +12,7 @@
  * Called automatically via 'state:changed' event.
  */
 
-/* global CATALOG, STATE, GRID, LABELS, PIP, POPOVER, DRAG */
+/* global CATALOG, STATE, GRID, LABELS, PIP, POPOVER, DRAG, TEST_MEDIA */
 
 const CANVAS = (() => {
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -253,6 +253,15 @@ const CANVAS = (() => {
     }, 'monitor-screen');
     g.appendChild(screen);
 
+    const screenRect = {
+      x: monRect.x + BEZEL,
+      y: monRect.y + BEZEL,
+      w: Math.max(monRect.w - BEZEL * 2, 10),
+      h: Math.max(monRect.h - BEZEL * 2 - 10, 10)
+    };
+
+    _drawTestMediaOverlays(g, setupIndex, row, col, cell, screenRect);
+
     // Size label
     const hasPip = !!(cell.pipZones && cell.pipZones.length && monitor.pipSupported);
     const pipPortrait = hasPip && cell.orientation === 'portrait';
@@ -345,6 +354,157 @@ const CANVAS = (() => {
     svg.appendChild(g);
   }
 
+  function _drawTestMediaOverlays(group, setupIndex, row, col, cell, screenRect) {
+    if (!(typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled())) {
+      return;
+    }
+
+    const cx = screenRect.x + screenRect.w / 2;
+    const cy = screenRect.y + screenRect.h / 2;
+
+    const monitorRef = cell.monitorTestMediaRef;
+    if (monitorRef && monitorRef.assetId) {
+      const asset = TEST_MEDIA.getById(monitorRef.assetId);
+      if (asset && asset.dataUrl) {
+        // Effective monitor resolution accounting for portrait rotation
+        const res = cell.selectedResolution || { width: 1920, height: 1080 };
+        const isPortrait = cell.orientation === 'portrait';
+        const resW = isPortrait ? res.height : res.width;
+        const resH = isPortrait ? res.width : res.height;
+
+        // Fraction of the monitor's pixel grid that the test image covers.
+        // Fall back to filling the screen when dimensions are not stored (legacy assets).
+        const hasSize = asset.width > 0 && asset.height > 0;
+        const scaleX = hasSize ? asset.width  / resW : 1;
+        const scaleY = hasSize ? asset.height / resH : 1;
+        const scalingMode = cell.monitorTestMediaScalingMode || 'center';
+
+        // center  — no scaling, 1:1 relative coverage, borders visible
+        // aspect  — scale uniformly to fit, preserve aspect ratio (may letterbox/pillarbox)
+        // full    — stretch to fill the entire screen area, matching "Full panel" GPU scaling
+        let finalScaleX, finalScaleY;
+        if (scalingMode === 'full') {
+          finalScaleX = scaleX;
+          finalScaleY = scaleY;
+        } else if (scalingMode === 'aspect') {
+          const fitScale = Math.min(scaleX, scaleY);
+          finalScaleX = fitScale;
+          finalScaleY = fitScale;
+        } else {
+          // center: show at true 1:1 pixel coverage relative to the selected resolution
+          finalScaleX = scaleX;
+          finalScaleY = scaleY;
+        }
+
+        const imgW = Math.max(1, screenRect.w * finalScaleX);
+        const imgH = Math.max(1, screenRect.h * finalScaleY);
+        const imgX = screenRect.x + (screenRect.w - imgW) / 2;
+        const imgY = screenRect.y + (screenRect.h - imgH) / 2;
+
+        // Dark letterbox / pillarbox background so bars are clearly visible
+        const bg = el('rect', {
+          x: screenRect.x, y: screenRect.y,
+          width: screenRect.w, height: screenRect.h,
+          fill: 'rgba(0,0,0,0.55)'
+        }, 'test-media-letterbox');
+        group.appendChild(bg);
+
+        // Clip image to screen bounds (handles overscan when scale > 1)
+        const clipId = `tm-clip-${setupIndex}-${row}-${col}`;
+        const clipPath = el('clipPath', { id: clipId });
+        clipPath.appendChild(el('rect', {
+          x: screenRect.x, y: screenRect.y,
+          width: screenRect.w, height: screenRect.h
+        }));
+        group.appendChild(clipPath);
+
+        const img = el('image', {
+          x: imgX, y: imgY,
+          width: imgW, height: imgH,
+          href: asset.dataUrl,
+          preserveAspectRatio: scalingMode === 'full' ? 'none' : 'xMidYMid meet',
+          'clip-path': `url(#${clipId})`
+        }, 'test-media-overlay-image');
+        group.appendChild(img);
+
+        const label = text(asset.name || 'Test media', cx, screenRect.y + 12, 'test-media-overlay-label');
+        group.appendChild(label);
+      } else {
+        const missing = text('Missing test media', cx, cy, 'test-media-missing');
+        group.appendChild(missing);
+      }
+    }
+
+    (cell.pipZones || []).forEach((zone, zIdx) => {
+      if (!zone.testMediaRef || !zone.testMediaRef.assetId) return;
+      const asset = TEST_MEDIA.getById(zone.testMediaRef.assetId);
+      if (asset && asset.dataUrl) {
+        // The zone covers a proportional slice of the monitor's resolution.
+        // Compute that slice so we can scale the test image the same way as on
+        // the full monitor surface.
+        const res = cell.selectedResolution || { width: 1920, height: 1080 };
+        const isPortrait = cell.orientation === 'portrait';
+        const resW = isPortrait ? res.height : res.width;
+        const resH = isPortrait ? res.width  : res.height;
+        const zoneResW = resW * (zone.w / screenRect.w);
+        const zoneResH = resH * (zone.h / screenRect.h);
+
+        const hasSize = asset.width > 0 && asset.height > 0;
+        const scaleX = hasSize ? asset.width  / zoneResW : 1;
+        const scaleY = hasSize ? asset.height / zoneResH : 1;
+        const scalingMode = cell.monitorTestMediaScalingMode || 'center';
+
+        let finalScaleX, finalScaleY;
+        if (scalingMode === 'full') {
+          finalScaleX = scaleX;
+          finalScaleY = scaleY;
+        } else if (scalingMode === 'aspect') {
+          const fitScale = Math.min(scaleX, scaleY);
+          finalScaleX = fitScale;
+          finalScaleY = fitScale;
+        } else {
+          finalScaleX = scaleX;
+          finalScaleY = scaleY;
+        }
+
+        const imgW = Math.max(1, zone.w * finalScaleX);
+        const imgH = Math.max(1, zone.h * finalScaleY);
+        const imgX = zone.x + (zone.w - imgW) / 2;
+        const imgY = zone.y + (zone.h - imgH) / 2;
+
+        // Dark letterbox bars within the zone
+        const zoneBg = el('rect', {
+          x: zone.x, y: zone.y,
+          width: Math.max(zone.w, 4), height: Math.max(zone.h, 4),
+          fill: 'rgba(0,0,0,0.55)'
+        }, 'test-media-letterbox');
+        group.appendChild(zoneBg);
+
+        const zoneClipId = `tm-clip-${setupIndex}-${row}-${col}-z${zIdx}`;
+        const zoneClip = el('clipPath', { id: zoneClipId });
+        zoneClip.appendChild(el('rect', {
+          x: zone.x, y: zone.y,
+          width: Math.max(zone.w, 4), height: Math.max(zone.h, 4)
+        }));
+        group.appendChild(zoneClip);
+
+        const img = el('image', {
+          x: imgX, y: imgY,
+          width: imgW, height: imgH,
+          href: asset.dataUrl,
+          preserveAspectRatio: scalingMode === 'full' ? 'none' : 'xMidYMid meet',
+          'clip-path': `url(#${zoneClipId})`
+        }, 'test-media-overlay-image');
+        group.appendChild(img);
+      } else {
+        const zx = zone.x + zone.w / 2;
+        const zy = zone.y + zone.h / 2;
+        const missing = text('Missing zone media', zx, zy, 'test-media-missing');
+        group.appendChild(missing);
+      }
+    });
+  }
+
   /* ---- Dimension annotations ---- */
 
   function _drawAnnotations(svg, colWidths, rowHeights, colWidths_mm, rowHeights_mm) {
@@ -434,11 +594,14 @@ const CANVAS = (() => {
   function getRenderMetrics(setupIndex) { return renderMetrics[setupIndex]; }
   function getManualZoom(setupIndex) { return manualZoom[setupIndex]; }
 
-  function openCellPopover(setupIndex, row, col) {
+  function openCellPopover(setupIndex, row, col, zoneId) {
     const svg = svgEls[setupIndex];
     if (!svg || !STATE.getCell(setupIndex, row, col)) return;
 
     STATE.setSelected(setupIndex, row, col);
+    if (zoneId && STATE.setSelectedZone) {
+      STATE.setSelectedZone(setupIndex, row, col, zoneId);
+    }
     render(setupIndex);
 
     const rect = getMonitorRect(setupIndex, row, col);

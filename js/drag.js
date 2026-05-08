@@ -11,11 +11,11 @@
  * to provide visual ghost feedback, since SVG drag-image isn't configurable.
  */
 
-/* global CATALOG, STATE, GRID, CANVAS, POPOVER */
+/* global CATALOG, STATE, GRID, CANVAS, POPOVER, TEST_MEDIA */
 
 const DRAG = (() => {
   // ---- State ----
-  let _activeSource = null; // { type:'catalog'|'monitor', monitorId?, setupIndex?, row?, col? }
+  let _activeSource = null; // { type:'catalog'|'monitor'|'test-media', monitorId?, assetId?, setupIndex?, row?, col? }
   let _ghost = null;        // ghost div
   let _dropAreasPrefBeforeDrag = null;
 
@@ -62,6 +62,30 @@ const DRAG = (() => {
   }
 
   /**
+   * Called by UI when rendering a test-media card.
+   * @param {HTMLElement} cardEl
+   * @param {string} assetId
+   */
+  function attachTestMediaDrag(cardEl, assetId) {
+    cardEl.setAttribute('draggable', 'true');
+
+    cardEl.addEventListener('dragstart', e => {
+      _activeSource = { type: 'test-media', assetId };
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', assetId);
+      cardEl.classList.add('dragging');
+      _beginDragDropAreaSession();
+    });
+
+    cardEl.addEventListener('dragend', () => {
+      cardEl.classList.remove('dragging');
+      _clearAllHighlights();
+      _activeSource = null;
+      _endDragDropAreaSession();
+    });
+  }
+
+  /**
    * Wire SVG element as a drop target (both catalog and monitor drags).
    * Called once after SVG is present in DOM — we use event delegation on each SVG.
    */
@@ -94,7 +118,8 @@ const DRAG = (() => {
           role: node.dataset.role,
           row: parseInt(node.dataset.row, 10),
           col: parseInt(node.dataset.col, 10),
-          setupIndex: parseInt(node.dataset.setup, 10)
+          setupIndex: parseInt(node.dataset.setup, 10),
+          zoneId: node.dataset.zoneId || null
         };
       }
       node = node.parentElement;
@@ -111,13 +136,16 @@ const DRAG = (() => {
 
     const isEmpty = hit.role === 'empty-cell';
     const isMonitor = hit.role === 'monitor';
+    const isPipZone = hit.role === 'pip-zone';
 
-    if (isEmpty) {
+    if (isEmpty && _activeSource.type === 'catalog') {
       e.dataTransfer.dropEffect = 'copy';
       CANVAS.highlightCell(setupIndex, hit.row, hit.col, true);
-    } else if (isMonitor && _activeSource.type === 'monitor') {
+    } else if ((isMonitor || isPipZone) && _activeSource.type === 'monitor') {
       // can drop on occupied cell → swap
       e.dataTransfer.dropEffect = 'move';
+    } else if ((isMonitor || isPipZone) && _activeSource.type === 'test-media') {
+      e.dataTransfer.dropEffect = 'copy';
     } else {
       e.dataTransfer.dropEffect = 'none';
     }
@@ -140,10 +168,27 @@ const DRAG = (() => {
         }
       }
     } else if (_activeSource && _activeSource.type === 'monitor') {
+      if (hit.role !== 'monitor' && hit.role !== 'pip-zone') {
+        _activeSource = null;
+        _endDragDropAreaSession();
+        return;
+      }
       STATE.moveMonitor(
         _activeSource.setupIndex, _activeSource.row, _activeSource.col,
         setupIndex, hit.row, hit.col
       );
+    } else if (_activeSource && _activeSource.type === 'test-media') {
+      if (!(typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled())) {
+        _showToast('Test media feature is disabled.');
+      } else if (hit.role === 'empty-cell') {
+        _showToast('Place a monitor first before dropping test media.');
+      } else if (hit.role === 'pip-zone' && hit.zoneId) {
+        STATE.setZoneTestMedia(setupIndex, hit.row, hit.col, hit.zoneId, _activeSource.assetId);
+        CANVAS.openCellPopover(setupIndex, hit.row, hit.col, hit.zoneId);
+      } else if (hit.role === 'monitor') {
+        STATE.setMonitorTestMedia(setupIndex, hit.row, hit.col, _activeSource.assetId);
+        CANVAS.openCellPopover(setupIndex, hit.row, hit.col);
+      }
     }
 
     _activeSource = null;
@@ -172,6 +217,7 @@ const DRAG = (() => {
 
     groupEl.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
+      e.preventDefault();
       _startX = e.clientX;
       _startY = e.clientY;
       const startCell = STATE.getCell(setupIndex, row, col);
@@ -184,14 +230,16 @@ const DRAG = (() => {
         const dy = Math.abs(mv.clientY - _startY);
         if (!_dragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
           _dragging = true;
+          groupEl.classList.add('monitor-dragging');
+          document.body.classList.add('is-dragging-monitor');
+          const selection = window.getSelection ? window.getSelection() : null;
+          if (selection && selection.removeAllRanges) selection.removeAllRanges();
           if (typeof POPOVER !== 'undefined' && POPOVER.getCurrent && POPOVER.getCurrent()) {
             POPOVER.hide();
           }
           groupEl.style.pointerEvents = 'none';
           _activeSource = { type: 'monitor', setupIndex, row, col };
-          _beginDragDropAreaSession();
           _createGhost(mv, setupIndex, row, col);
-          _highlightAllEmpty();
           // Enable HTML5 dragover on SVGs by setting draggable
           _makeSvgsDraggable(true);
         }
@@ -212,6 +260,8 @@ const DRAG = (() => {
         document.removeEventListener('mouseup',   onMouseUp);
 
         if (_dragging) {
+          groupEl.classList.remove('monitor-dragging');
+          document.body.classList.remove('is-dragging-monitor');
           _makeSvgsDraggable(false);
           _removeGhost();
           _clearAllHighlights();
@@ -234,8 +284,8 @@ const DRAG = (() => {
             );
           }
           _activeSource = null;
-          _endDragDropAreaSession();
         } else {
+          document.body.classList.remove('is-dragging-monitor');
           _clearDragPreview();
         }
         _dragging = false;
@@ -313,8 +363,13 @@ const DRAG = (() => {
   /* ---- Toast ---- */
 
   function _showGridFullToast() {
+    _showToast('Grid full — maximum 2 rows × 4 columns reached.');
+  }
+
+  function _showToast(message) {
     const toast = document.getElementById('gridToast');
     if (!toast) return;
+    toast.textContent = message;
     toast.removeAttribute('hidden');
     toast.classList.add('show');
     clearTimeout(toast._timer);
@@ -343,5 +398,5 @@ const DRAG = (() => {
     }
   }
 
-  return { init, attachCatalogDrag, attachSvgDropTargets, attachMonitorDrag };
+  return { init, attachCatalogDrag, attachTestMediaDrag, attachSvgDropTargets, attachMonitorDrag };
 })();

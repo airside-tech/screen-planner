@@ -40,6 +40,21 @@ let CATALOG = [
     ]
   },
   {
+    id: 'eizo-24-wuxga',
+    builtIn: true,
+    size: 24,
+    brand: 'EIZO',
+    modelName: 'FlexScan EV2410R-WT',
+    panelType: 'IPS',
+    physicalWidth_mm: 518,
+    physicalHeight_mm: 324,
+    aspectRatio: '16:10',
+    pipSupported: false,
+    resolutions: [
+      { label: '1920×1200 (WUXGA, 60Hz)', width: 1920, height: 1200, refresh: 60 }
+    ]
+  },
+  {
     id: 'dell-27-qhd',
     builtIn: true,
     size: 27,
@@ -51,9 +66,10 @@ let CATALOG = [
     aspectRatio: '16:9',
     pipSupported: true,
     resolutions: [
-      { label: '3840×2160 (4K, 60Hz)',   width: 3840, height: 2160, refresh: 60 },
-      { label: '2560×1440 (QHD, 75Hz)',  width: 2560, height: 1440, refresh: 75 },
-      { label: '1920×1080 (FHD, 75Hz)',  width: 1920, height: 1080, refresh: 75 }
+      { label: '3840×2160 (4K, 60Hz)',    width: 3840, height: 2160, refresh: 60 },
+      { label: '2560×1440 (QHD, 75Hz)',   width: 2560, height: 1440, refresh: 75 },
+      { label: '1920×1200 (WUXGA, 60Hz)', width: 1920, height: 1200, refresh: 60 },
+      { label: '1920×1080 (FHD, 75Hz)',   width: 1920, height: 1080, refresh: 75 }
     ]
   },
   {
@@ -69,9 +85,10 @@ let CATALOG = [
     pipSupported: true,
     resolutions: [
       { label: '7680×4320 (8K, 60Hz)',   width: 7680, height: 4320, refresh: 60 },
-      { label: '3840×2160 (4K, 60Hz)',   width: 3840, height: 2160, refresh: 60 },
-      { label: '2560×1440 (QHD, 60Hz)',  width: 2560, height: 1440, refresh: 60 },
-      { label: '1920×1080 (FHD, 60Hz)',  width: 1920, height: 1080, refresh: 60 }
+      { label: '3840×2160 (4K, 60Hz)',    width: 3840, height: 2160, refresh: 60 },
+      { label: '2560×1440 (QHD, 60Hz)',   width: 2560, height: 1440, refresh: 60 },
+      { label: '1920×1200 (WUXGA, 60Hz)', width: 1920, height: 1200, refresh: 60 },
+      { label: '1920×1080 (FHD, 60Hz)',   width: 1920, height: 1080, refresh: 60 }
     ]
   },
   {
@@ -86,10 +103,11 @@ let CATALOG = [
     aspectRatio: '16:9',
     pipSupported: true,
     resolutions: [
-      { label: '7680×4320 (8K, 60Hz)',   width: 7680, height: 4320, refresh: 60 },
-      { label: '3840×2160 (4K, 60Hz)',   width: 3840, height: 2160, refresh: 60 },
-      { label: '2560×1440 (QHD, 60Hz)',  width: 2560, height: 1440, refresh: 60 },
-      { label: '1920×1080 (FHD, 60Hz)',  width: 1920, height: 1080, refresh: 60 }
+      { label: '7680×4320 (8K, 60Hz)',    width: 7680, height: 4320, refresh: 60 },
+      { label: '3840×2160 (4K, 60Hz)',    width: 3840, height: 2160, refresh: 60 },
+      { label: '2560×1440 (QHD, 60Hz)',   width: 2560, height: 1440, refresh: 60 },
+      { label: '1920×1200 (WUXGA, 60Hz)', width: 1920, height: 1200, refresh: 60 },
+      { label: '1920×1080 (FHD, 60Hz)',   width: 1920, height: 1080, refresh: 60 }
     ]
   },
   {
@@ -121,9 +139,94 @@ let CATALOG = [
     aspectRatio: '16:9',
     pipSupported: true,
     resolutions: [
-      { label: '7680×4320 (8K, 60Hz)',   width: 7680, height: 4320, refresh: 60 },
-      { label: '3840×2160 (4K, 60Hz)',   width: 3840, height: 2160, refresh: 60 },
-      { label: '1920×1080 (FHD, 60Hz)',  width: 1920, height: 1080, refresh: 60 }
+      { label: '7680×4320 (8K, 60Hz)',    width: 7680, height: 4320, refresh: 60 },
+      { label: '3840×2160 (4K, 60Hz)',    width: 3840, height: 2160, refresh: 60 },
+      { label: '1920×1200 (WUXGA, 60Hz)', width: 1920, height: 1200, refresh: 60 },
+      { label: '1920×1080 (FHD, 60Hz)',   width: 1920, height: 1080, refresh: 60 }
+    ]
+  },
+  {
+    id: 'eizo-rp4325-008',
+    builtIn: true,
+    size: 43,
+    brand: 'EIZO',
+    modelName: 'Eizo Raptor RP4325-008',
+    panelType: 'IPS',
+    physicalWidth_mm: 941,
+    physicalHeight_mm: 529,
+    aspectRatio: '16:9',
+    pipSupported: false,
+    resolutions: [
+      { label: '3840×2160 (4K, 60Hz)',  width: 3840, height: 2160, refresh: 60 },
+      { label: '1920×1080 (FHD, 60Hz)', width: 1920, height: 1080, refresh: 60 },
+      { label: '1280×720 (HD, 60Hz)',   width: 1280, height:  720, refresh: 60 }
+    ]
+  },
+  {
+    id: 'philips-49b2u5900ch',
+    builtIn: true,
+    size: 49,
+    brand: 'Philips',
+    modelName: 'Philips 49B2U5900CH',
+    panelType: 'VA',
+    physicalWidth_mm: 1192,
+    physicalHeight_mm: 335,
+    aspectRatio: '32:9',
+    pipSupported: true,
+    resolutions: [
+      { label: '5120×1440 (DQHD, 75Hz)',  width: 5120, height: 1440, refresh: 75 },
+      { label: '3840×1080 (UWFHD, 75Hz)', width: 3840, height: 1080, refresh: 75 },
+      { label: '2560×720 (60Hz)',          width: 2560, height:  720, refresh: 60 }
+    ]
+  },
+  {
+    id: 'eizo-fdf2121wt-a',
+    builtIn: true,
+    size: 21,
+    brand: 'EIZO',
+    modelName: 'Eizo DuraVision FDF2121WT-A',
+    panelType: 'IPS',
+    physicalWidth_mm: 476,
+    physicalHeight_mm: 268,
+    aspectRatio: '16:9',
+    pipSupported: false,
+    resolutions: [
+      { label: '1920×1080 (FHD, 60Hz)', width: 1920, height: 1080, refresh: 60 }
+    ]
+  },
+  {
+    id: 'dell-u2725qe',
+    builtIn: true,
+    size: 27,
+    brand: 'Dell',
+    modelName: 'Dell UltraSharp U2725QE',
+    panelType: 'IPS',
+    physicalWidth_mm: 614,
+    physicalHeight_mm: 346,
+    aspectRatio: '16:9',
+    pipSupported: true,
+    resolutions: [
+      { label: '3840×2160 (4K, 120Hz)',  width: 3840, height: 2160, refresh: 120 },
+      { label: '3840×2160 (4K, 60Hz)',   width: 3840, height: 2160, refresh: 60  },
+      { label: '2560×1440 (QHD, 60Hz)',  width: 2560, height: 1440, refresh: 60  },
+      { label: '1920×1080 (FHD, 60Hz)',  width: 1920, height: 1080, refresh: 60  }
+    ]
+  },
+  {
+    id: 'lg-49uh5j',
+    builtIn: true,
+    size: 49,
+    brand: 'LG',
+    modelName: 'LG 49UH5J',
+    panelType: 'IPS',
+    physicalWidth_mm: 1073,
+    physicalHeight_mm: 604,
+    aspectRatio: '16:9',
+    pipSupported: true,
+    resolutions: [
+      { label: '3840×2160 (4K, 60Hz)',  width: 3840, height: 2160, refresh: 60 },
+      { label: '2560×1440 (QHD, 60Hz)', width: 2560, height: 1440, refresh: 60 },
+      { label: '1920×1080 (FHD, 60Hz)', width: 1920, height: 1080, refresh: 60 }
     ]
   }
 ];
@@ -181,6 +284,22 @@ function _loadCustom() {
 }
 
 /**
+ * Update an existing custom monitor in-place and re-persist.
+ * Built-in monitors are never modified.
+ * @param {string} id - The monitor's current id (immutable)
+ * @param {object} spec - New field values (id and builtIn are ignored)
+ * @returns {boolean} true if updated, false if not found / built-in
+ */
+function catalogUpdateCustom(id, spec) {
+  const idx = CATALOG.findIndex(m => m.id === id && !m.builtIn);
+  if (idx === -1) return false;
+  const updated = Object.assign({}, spec, { id, builtIn: false });
+  CATALOG[idx] = updated;
+  _saveCustom();
+  return true;
+}
+
+/**
  * Add a custom monitor to the catalog and persist it.
  * @param {object} spec - Monitor spec (sans id/builtIn)
  * @returns {object} The created entry
@@ -203,6 +322,34 @@ function catalogRemoveCustom(id) {
   if (idx === -1) return;
   CATALOG.splice(idx, 1);
   _saveCustom();
+}
+
+/**
+ * Export the full catalog (built-ins + custom) as a plain array copy.
+ * @returns {object[]}
+ */
+function catalogExport() {
+  return CATALOG.slice();
+}
+
+/**
+ * Import an array of monitor entries, adding only those whose id is not
+ * already present (guards built-ins and prevents duplicates).
+ * @param {object[]} entries
+ * @returns {number} Count of monitors actually added
+ */
+function catalogImportCustom(entries) {
+  if (!Array.isArray(entries)) return 0;
+  let added = 0;
+  entries.forEach(entry => {
+    if (!entry || !entry.id) return;
+    if (CATALOG.some(m => m.id === entry.id)) return; // already present
+    const safe = Object.assign({}, entry, { builtIn: false });
+    CATALOG.push(safe);
+    added++;
+  });
+  if (added > 0) _saveCustom();
+  return added;
 }
 
 // Load custom monitors saved in previous sessions

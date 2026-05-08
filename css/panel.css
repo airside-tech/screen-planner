@@ -288,6 +288,41 @@
   cursor: not-allowed;
 }
 
+.popover-testmedia-autoscale {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.popover-testmedia-toggle {
+  display: flex;
+  gap: 3px;
+}
+
+.btn-testmedia-scale {
+  flex: 1;
+  padding: 5px 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  transition: all var(--transition);
+  background: var(--color-surface2);
+  color: var(--color-text-dim);
+}
+
+.btn-testmedia-scale:hover {
+  border-color: var(--color-accent2);
+  color: var(--color-accent2);
+}
+
+.btn-testmedia-scale.active {
+  background: var(--color-accent2);
+  border-color: var(--color-accent2);
+  color: #fff;
+}
+
 /* --- Custom monitor badge and delete button --- */
 
 .card-custom-badge {
@@ -300,6 +335,26 @@
   padding: 2px 4px;
   align-self: center;
   margin-left: 2px;
+}
+
+.btn-edit-custom {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0 5px;
+  line-height: 1;
+  border-radius: 2px;
+  align-self: center;
+  transition: all var(--transition);
+}
+.btn-edit-custom:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
 }
 
 .btn-delete-custom {
@@ -339,6 +394,29 @@
 .btn-add-monitor:hover {
   background: var(--color-accent);
   color: #fff;
+}
+
+/* --- Catalog Export / Import buttons (sidebar) --- */
+
+.catalog-io-btns {
+  display: flex;
+  gap: 6px;
+}
+
+.btn-catalog-io {
+  flex: 1;
+  padding: 5px 8px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-catalog-io:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
 }
 
 /* --- Add Custom Monitor Dialog --- */

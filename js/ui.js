@@ -4,7 +4,7 @@
  * Also exposes POPOVER global used by canvas.js.
  */
 
-/* global CATALOG, STATE, GRID, CANVAS, DRAG, LABELS */
+/* global CATALOG, STATE, GRID, CANVAS, DRAG, LABELS, TEST_MEDIA, catalogGetAll, catalogAddCustom, catalogRemoveCustom, catalogExport, catalogImportCustom */
 
 /* ================================================================
    POPOVER
@@ -72,6 +72,71 @@ const POPOVER = (() => {
         btn.disabled = !canPip && count !== 0;
         btn.classList.toggle('active', count === currentCount);
       });
+    }
+
+    const testMediaRow = el('popoverTestMediaRow');
+    const autoScaleRow = el('popoverAutoScaleRow');
+    const statusEl = el('testMediaStatus');
+    const clearMonitorBtn = el('clearMonitorMediaBtn');
+    const clearZoneBtn = el('clearZoneMediaBtn');
+    const testMediaEnabled = typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled();
+    const selectedZone = STATE.getSelectedZone ? STATE.getSelectedZone() : null;
+    const zoneMatch = selectedZone &&
+      selectedZone.setupIndex === _current.setupIndex &&
+      selectedZone.row === _current.row &&
+      selectedZone.col === _current.col;
+    const zone = zoneMatch
+      ? (cell.pipZones || []).find(z => z.id === selectedZone.zoneId)
+      : null;
+
+    if (testMediaRow) {
+      testMediaRow.hidden = !testMediaEnabled;
+    }
+    if (autoScaleRow) {
+      autoScaleRow.hidden = !testMediaEnabled;
+    }
+    if (statusEl) {
+      statusEl.hidden = !testMediaEnabled;
+    }
+
+    if (testMediaEnabled && statusEl) {
+      const monitorAssetId = cell.monitorTestMediaRef && cell.monitorTestMediaRef.assetId
+        ? cell.monitorTestMediaRef.assetId
+        : null;
+      const monitorAsset = monitorAssetId && TEST_MEDIA.getById ? TEST_MEDIA.getById(monitorAssetId) : null;
+      const zoneAssetId = zone && zone.testMediaRef && zone.testMediaRef.assetId
+        ? zone.testMediaRef.assetId
+        : null;
+      const zoneAsset = zoneAssetId && TEST_MEDIA.getById ? TEST_MEDIA.getById(zoneAssetId) : null;
+
+      if (zone) {
+        const zoneLabel = `Zone ${Math.max(1, (cell.pipZones || []).findIndex(z => z.id === zone.id) + 1)}`;
+        statusEl.textContent = `${zoneLabel}: ${zoneAsset ? zoneAsset.name : (zoneAssetId ? 'Missing asset' : 'No test media')}`;
+      } else {
+        statusEl.textContent = `Monitor: ${monitorAsset ? monitorAsset.name : (monitorAssetId ? 'Missing asset' : 'No test media')}`;
+      }
+
+      if (autoScaleRow) {
+        const hasMonitorAsset = !!monitorAssetId;
+        autoScaleRow.hidden = !hasMonitorAsset;
+        if (hasMonitorAsset) {
+          const mode = cell.monitorTestMediaScalingMode || 'center';
+          el('testMediaScaleCenter').classList.toggle('active', mode === 'center');
+          el('testMediaScaleAspect').classList.toggle('active', mode === 'aspect');
+          el('testMediaScaleFull').classList.toggle('active', mode === 'full');
+        }
+      }
+    }
+
+    if (clearMonitorBtn) {
+      clearMonitorBtn.disabled = !testMediaEnabled || !(cell.monitorTestMediaRef && cell.monitorTestMediaRef.assetId);
+    }
+    if (clearZoneBtn) {
+      clearZoneBtn.disabled = !testMediaEnabled || !(zone && zone.testMediaRef && zone.testMediaRef.assetId);
+    }
+
+    if (!testMediaEnabled && autoScaleRow) {
+      autoScaleRow.hidden = true;
     }
 
     return { cell, monitor };
@@ -163,6 +228,44 @@ const POPOVER = (() => {
       hide();
     });
 
+    const clearMonitorBtn = el('clearMonitorMediaBtn');
+    if (clearMonitorBtn) {
+      clearMonitorBtn.addEventListener('click', () => {
+        if (!_current || !STATE.clearMonitorTestMedia) return;
+        STATE.clearMonitorTestMedia(_current.setupIndex, _current.row, _current.col);
+        _syncPopoverFields();
+      });
+    }
+
+    const clearZoneBtn = el('clearZoneMediaBtn');
+    if (clearZoneBtn) {
+      clearZoneBtn.addEventListener('click', () => {
+        if (!_current || !STATE.clearZoneTestMedia || !STATE.getSelectedZone) return;
+        const selectedZone = STATE.getSelectedZone();
+        if (!selectedZone) return;
+        if (selectedZone.setupIndex !== _current.setupIndex ||
+            selectedZone.row !== _current.row ||
+            selectedZone.col !== _current.col) {
+          return;
+        }
+        STATE.clearZoneTestMedia(_current.setupIndex, _current.row, _current.col, selectedZone.zoneId);
+        _syncPopoverFields();
+      });
+    }
+
+    document.querySelectorAll('.btn-testmedia-scale').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!_current || !STATE.setMonitorTestMediaScalingMode) return;
+        STATE.setMonitorTestMediaScalingMode(
+          _current.setupIndex,
+          _current.row,
+          _current.col,
+          btn.dataset.scalingMode
+        );
+        _syncPopoverFields();
+      });
+    });
+
     // Close when clicking outside popover
     document.addEventListener('click', e => {
       if (_current &&
@@ -211,6 +314,9 @@ const UI = (() => {
     _bindVideoPanel();
     _bindKeyboard();
     _bindAddMonitorBtn();
+    _bindSaveLoadSetups();
+    _bindCatalogIO();
+    _bindTestMediaLibrary();
     _updateInfoStrip(0);
     _updateInfoStrip(1);
     _updateZoomReadout(0);
@@ -297,12 +403,23 @@ const UI = (() => {
         card.appendChild(badge);
       }
 
-      // Custom badge + delete button for non-built-in entries
+      // Custom badge + edit/delete buttons for non-built-in entries
       if (!mon.builtIn) {
         const customBadge = document.createElement('span');
         customBadge.className = 'card-custom-badge';
         customBadge.textContent = 'Custom';
         card.appendChild(customBadge);
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn-edit-custom';
+        editBtn.title = 'Edit custom monitor';
+        editBtn.setAttribute('aria-label', 'Edit custom monitor');
+        editBtn.textContent = '✎';
+        editBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          _openMonitorForm(mon.id);
+        });
+        card.appendChild(editBtn);
 
         const delBtn = document.createElement('button');
         delBtn.className = 'btn-delete-custom';
@@ -568,8 +685,8 @@ const UI = (() => {
 
     btn.addEventListener('click', () => _openMonitorForm());
 
-    document.getElementById('monitorFormClose').addEventListener('click', () => dialog.close());
-    document.getElementById('monitorFormCancel').addEventListener('click', () => dialog.close());
+    document.getElementById('monitorFormClose').addEventListener('click', () => { _editingMonitorId = null; dialog.close(); });
+    document.getElementById('monitorFormCancel').addEventListener('click', () => { _editingMonitorId = null; dialog.close(); });
 
     // "Add Resolution" row
     document.getElementById('mfAddResBtn').addEventListener('click', () => _addResolutionRow());
@@ -624,29 +741,84 @@ const UI = (() => {
         resolutions
       };
 
-      catalogAddCustom(spec);
       const currentFilter = document.getElementById('sizeFilter');
       const filterVal = currentFilter ? currentFilter.value : 'all';
+
+      if (_editingMonitorId) {
+        // Edit mode — update in-place and normalise placed cells
+        catalogUpdateCustom(_editingMonitorId, spec);
+        // Normalise any placed cell whose current selectedResolution is no longer valid
+        for (let si = 0; si <= 1; si++) {
+          for (let r = 0; r < GRID.MAX_ROWS; r++) {
+            for (let c = 0; c < GRID.MAX_COLS; c++) {
+              const cell = STATE.getCell(si, r, c);
+              if (!cell || cell.monitorId !== _editingMonitorId) continue;
+              const still = spec.resolutions.find(res =>
+                res.width === cell.selectedResolution.width &&
+                res.height === cell.selectedResolution.height &&
+                res.refresh === cell.selectedResolution.refresh
+              );
+              if (!still) {
+                STATE.setResolution(si, r, c, spec.resolutions[0]);
+              }
+            }
+          }
+        }
+        _editingMonitorId = null;
+      } else {
+        // Create mode
+        catalogAddCustom(spec);
+      }
+
       _renderCatalog(filterVal === 'all' ? null : parseInt(filterVal, 10));
       DRAG.attachSvgDropTargets();
+      // Re-render both canvases so any placed instances reflect the changes
+      CANVAS.render(0);
+      CANVAS.render(1);
       dialog.close();
     });
   }
 
-  function _openMonitorForm() {
+  // Edit-mode state — null means create mode
+  let _editingMonitorId = null;
+
+  function _openMonitorForm(editMonitorId) {
     const dialog = document.getElementById('monitorFormDialog');
-    // Reset form
-    document.getElementById('mfBrand').value  = '';
-    document.getElementById('mfModel').value  = '';
-    document.getElementById('mfSize').value   = '';
-    document.getElementById('mfWidth').value  = '';
-    document.getElementById('mfHeight').value = '';
-    document.getElementById('mfPanel').value  = 'IPS';
-    document.getElementById('mfPip').checked  = false;
+    _editingMonitorId = editMonitorId || null;
+
+    const isEdit = !!_editingMonitorId;
+    const existing = isEdit ? catalogGetById(_editingMonitorId) : null;
+
+    // Title and primary action label reflect the mode
+    const titleEl = document.getElementById('mfFormTitle');
+    const saveBtn = document.getElementById('monitorFormSave');
+    if (titleEl) titleEl.textContent = isEdit ? 'Edit Monitor' : 'Add Monitor';
+    if (saveBtn) saveBtn.textContent  = isEdit ? 'Update Monitor' : 'Save Monitor';
+
+    // Prefill from existing or reset to blank
+    document.getElementById('mfBrand').value  = existing ? existing.brand : '';
+    // Model field holds only the part after the brand name
+    document.getElementById('mfModel').value  = existing
+      ? (existing.modelName.startsWith(existing.brand + ' ')
+          ? existing.modelName.slice(existing.brand.length + 1)
+          : existing.modelName)
+      : '';
+    document.getElementById('mfSize').value   = existing ? existing.size : '';
+    document.getElementById('mfWidth').value  = existing ? existing.physicalWidth_mm  : '';
+    document.getElementById('mfHeight').value = existing ? existing.physicalHeight_mm : '';
+    document.getElementById('mfPanel').value  = existing ? existing.panelType : 'IPS';
+    document.getElementById('mfPip').checked  = existing ? !!existing.pipSupported : false;
     document.getElementById('mfError').textContent = '';
+
+    // Resolution rows — seed from existing or start with one blank
     const resList = document.getElementById('mfResolutionList');
     resList.innerHTML = '';
-    _addResolutionRow(); // start with one empty row
+    if (existing && existing.resolutions && existing.resolutions.length) {
+      existing.resolutions.forEach(r => _addResolutionRow(r.width, r.height, r.refresh));
+    } else {
+      _addResolutionRow();
+    }
+
     dialog.showModal();
   }
 
@@ -733,6 +905,229 @@ const UI = (() => {
         const tt = document.getElementById('labelTooltip');
         if (tt) tt.setAttribute('hidden', '');
       }
+    });
+  }
+
+  /* ---- Save / Load setups ---- */
+
+  /**
+   * Save a JSON-serialisable object to a file.
+   * Uses the File System Access API (showSaveFilePicker) when available so the
+   * user can choose the save location. Falls back to an anchor-download for
+   * browsers that do not support the API (e.g. Firefox).
+   */
+  async function _saveJSON(suggestedName, obj) {
+    const json = JSON.stringify(obj, null, 2);
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'JSON file', accept: { 'application/json': ['.json'] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // user cancelled — do nothing
+        // Any other error falls through to the anchor-download fallback
+      }
+    }
+    // Fallback: trigger a browser download to the default Downloads folder
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = suggestedName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function _bindSaveLoadSetups() {
+    _bindSaveLoadForSetup(0, 'A');
+    _bindSaveLoadForSetup(1, 'B');
+  }
+
+  function _bindSaveLoadForSetup(setupIndex, suffix) {
+    const saveBtn  = document.getElementById('saveSetup' + suffix);
+    const loadBtn  = document.getElementById('loadSetup' + suffix);
+    const fileInput = document.getElementById('loadSetup' + suffix + 'Input');
+    if (!saveBtn || !loadBtn || !fileInput) return;
+
+    saveBtn.addEventListener('click', () => {
+      const data = STATE.exportSetup(setupIndex);
+      _saveJSON('screenplanner-setup-' + suffix.toLowerCase() + '.json', {
+        version: 1,
+        type: 'setup',
+        data
+      });
+    });
+
+    loadBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed || parsed.type !== 'setup' || !parsed.data) {
+            _showToast('Invalid setup file.');
+            return;
+          }
+          STATE.importSetup(setupIndex, parsed.data);
+          // Sync the editable title element
+          const titleEl = document.getElementById('title' + suffix);
+          const setup = STATE.getSetup(setupIndex);
+          if (titleEl && setup && setup.name) titleEl.textContent = setup.name;
+          CANVAS.render(setupIndex);
+          LABELS.syncLabels(setupIndex);
+          DRAG.attachSvgDropTargets();
+        } catch (_) {
+          _showToast('Could not read setup file — invalid JSON.');
+        }
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  /* ---- Catalog export / import ---- */
+
+  function _bindCatalogIO() {
+    const exportBtn = document.getElementById('exportCatalogBtn');
+    const importBtn = document.getElementById('importCatalogBtn');
+    const fileInput = document.getElementById('importCatalogInput');
+    if (!exportBtn || !importBtn || !fileInput) return;
+
+    exportBtn.addEventListener('click', () => {
+      _saveJSON('screenplanner-catalog.json', {
+        version: 1,
+        type: 'catalog',
+        entries: catalogExport()
+      });
+    });
+
+    importBtn.addEventListener('click', () => fileInput.click());
+
+    fileInput.addEventListener('change', () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed || parsed.type !== 'catalog' || !Array.isArray(parsed.entries)) {
+            _showToast('Invalid catalog file.');
+            return;
+          }
+          const added = catalogImportCustom(parsed.entries);
+          const currentFilter = document.getElementById('sizeFilter');
+          const filterVal = currentFilter ? currentFilter.value : 'all';
+          _renderCatalog(filterVal === 'all' ? null : parseInt(filterVal, 10));
+          DRAG.attachSvgDropTargets();
+          _showToast(added > 0 ? `Added ${added} monitor(s) to catalog.` : 'No new monitors to import.');
+        } catch (_) {
+          _showToast('Could not read catalog file — invalid JSON.');
+        }
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
+  }
+
+  /* ---- Test media library ---- */
+
+  function _isTestMediaEnabled() {
+    return typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled();
+  }
+
+  function _bindTestMediaLibrary() {
+    const section = document.getElementById('testMediaSection');
+    if (!section) return;
+
+    if (!_isTestMediaEnabled()) {
+      section.setAttribute('hidden', '');
+      return;
+    }
+
+    section.removeAttribute('hidden');
+    _renderTestMediaLibrary();
+
+    const uploadBtn = document.getElementById('uploadTestMediaBtn');
+    const uploadInput = document.getElementById('uploadTestMediaInput');
+
+    if (uploadBtn && uploadInput) {
+      uploadBtn.addEventListener('click', () => uploadInput.click());
+      uploadInput.addEventListener('change', async () => {
+        const file = uploadInput.files && uploadInput.files[0];
+        if (!file) return;
+        const result = await TEST_MEDIA.addFromFile(file);
+        if (!result.ok) {
+          _showToast(result.error || 'Could not add test media.');
+        } else {
+          _showToast(result.warning || 'Test media added. Drag it onto a monitor or PiP zone.');
+        }
+        uploadInput.value = '';
+      });
+    }
+
+    document.addEventListener('testmedia:library-changed', () => {
+      _renderTestMediaLibrary();
+      CANVAS.render(0);
+      CANVAS.render(1);
+      LABELS.syncLabels(0);
+      LABELS.syncLabels(1);
+    });
+  }
+
+  function _renderTestMediaLibrary() {
+    const list = document.getElementById('testMediaList');
+    if (!list || !_isTestMediaEnabled()) return;
+
+    list.innerHTML = '';
+    const assets = TEST_MEDIA.list();
+
+    if (!assets.length) {
+      const empty = document.createElement('div');
+      empty.className = 'testmedia-empty';
+      empty.textContent = 'No test media yet. Upload a PNG, JPG, or WebP image.';
+      list.appendChild(empty);
+      return;
+    }
+
+    assets.forEach(asset => {
+      const card = document.createElement('div');
+      card.className = 'testmedia-card';
+      card.setAttribute('role', 'listitem');
+      card.setAttribute('aria-label', asset.name || 'Test media');
+
+      const img = document.createElement('img');
+      img.className = 'testmedia-thumb';
+      img.src = asset.dataUrl;
+      img.alt = '';
+
+      const name = document.createElement('span');
+      name.className = 'testmedia-name';
+      name.textContent = asset.name || asset.id;
+
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'btn-testmedia-remove';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove test media';
+      removeBtn.setAttribute('aria-label', 'Remove test media');
+      removeBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        TEST_MEDIA.remove(asset.id);
+      });
+
+      card.appendChild(img);
+      card.appendChild(name);
+      card.appendChild(removeBtn);
+
+      DRAG.attachTestMediaDrag(card, asset.id);
+      list.appendChild(card);
     });
   }
 

@@ -10,7 +10,7 @@
  *   PIP.renderZones(parentG, monRect, cell, monitor) — draws zone groups into parentG
  */
 
-/* global STATE */
+/* global STATE, CANVAS */
 
 const PIP = (() => {
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -133,6 +133,10 @@ const PIP = (() => {
       const g = document.createElementNS(SVG_NS, 'g');
       g.setAttribute('class', 'pip-zone');
       g.setAttribute('data-zone-id', zone.id);
+      g.setAttribute('data-role', 'pip-zone');
+      g.setAttribute('data-setup', String(si));
+      g.setAttribute('data-row', String(row));
+      g.setAttribute('data-col', String(col));
 
       // Zone body (semi-transparent tinted rect)
       const body = _el('rect', {
@@ -140,6 +144,13 @@ const PIP = (() => {
         width: Math.max(zone.w, 4), height: Math.max(zone.h, 4),
         rx: 3
       }, 'pip-zone-body');
+      body.style.pointerEvents = 'all';
+      body.addEventListener('click', e => {
+        e.stopPropagation();
+        if (typeof CANVAS !== 'undefined' && CANVAS.openCellPopover) {
+          CANVAS.openCellPopover(si, row, col, zone.id);
+        }
+      });
       g.appendChild(body);
 
       // Zone number — centered

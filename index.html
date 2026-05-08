@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="css/panel.css" />
   <link rel="stylesheet" href="css/monitor.css" />
   <link rel="stylesheet" href="css/labels.css" />
+  <link rel="stylesheet" href="css/testmedia.css" />
 </head>
 <body>
 
@@ -33,6 +34,14 @@
       </div>
 
       <div class="sidebar-section">
+        <h3>Catalog</h3>
+        <div class="catalog-io-btns">
+          <button class="btn-catalog-io" id="exportCatalogBtn" title="Export full catalog as JSON file">Export</button>
+          <button class="btn-catalog-io" id="importCatalogBtn" title="Import monitors from JSON file">Import</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
         <label class="filter-label" for="sizeFilter">Filter by size</label>
         <select id="sizeFilter" class="filter-select">
           <option value="all">All sizes</option>
@@ -52,6 +61,12 @@
 
       <div class="sidebar-section sidebar-hint">
         <p>Drag a monitor onto an empty cell in a setup to place it.</p>
+      </div>
+
+      <div class="sidebar-section testmedia-section" id="testMediaSection" hidden>
+        <h3>Test Media Library</h3>
+        <div class="testmedia-list" id="testMediaList"></div>
+        <button class="btn-testmedia-upload" id="uploadTestMediaBtn" title="Upload PNG, JPG, or WebP test image">+ Upload Test Image</button>
       </div>
 
       <!-- Add custom monitor -->
@@ -87,6 +102,8 @@
             <button class="btn-hide" id="hideA" title="Hide Setup A">Hide</button>
           </div>
           <button class="btn-clear" id="clearA" title="Clear all monitors from Setup A">Clear</button>
+          <button class="btn-save-setup" id="saveSetupA" title="Export Setup A as JSON file">Save</button>
+          <button class="btn-load-setup" id="loadSetupA" title="Load Setup A from JSON file">Load</button>
         </div>
         <div class="canvas-wrapper" id="canvasWrapperA">
           <svg class="layout-svg" id="svgA" role="img" aria-label="Setup A layout canvas"></svg>
@@ -113,6 +130,8 @@
             <button class="btn-hide" id="hideB" title="Hide Setup B">Hide</button>
           </div>
           <button class="btn-clear" id="clearB" title="Clear all monitors from Setup B">Clear</button>
+          <button class="btn-save-setup" id="saveSetupB" title="Export Setup B as JSON file">Save</button>
+          <button class="btn-load-setup" id="loadSetupB" title="Load Setup B from JSON file">Load</button>
         </div>
         <div class="canvas-wrapper" id="canvasWrapperB">
           <svg class="layout-svg" id="svgB" role="img" aria-label="Setup B layout canvas"></svg>
@@ -147,6 +166,19 @@
         </div>
         <button class="btn-addlabel" id="addLabelBtn">Add Label</button>
       </div>
+      <div class="popover-testmedia-row" id="popoverTestMediaRow" hidden>
+        <button class="btn-popover-testmedia" id="clearMonitorMediaBtn" title="Clear test image from monitor surface">Clear Monitor Media</button>
+        <button class="btn-popover-testmedia" id="clearZoneMediaBtn" title="Clear test image from selected PiP zone">Clear Zone Media</button>
+      </div>
+      <div class="popover-testmedia-autoscale" id="popoverAutoScaleRow" hidden>
+        <label class="popover-label">Test Image Scaling</label>
+        <div class="popover-testmedia-toggle" role="group" aria-label="Test image scaling mode">
+          <button class="btn-testmedia-scale" id="testMediaScaleCenter" data-scaling-mode="center" title="No scaling — centered with borders">1:1</button>
+          <button class="btn-testmedia-scale" id="testMediaScaleAspect" data-scaling-mode="aspect" title="Scale to fit, preserve aspect ratio">Aspect</button>
+          <button class="btn-testmedia-scale" id="testMediaScaleFull" data-scaling-mode="full" title="Stretch to fill the full panel">Full</button>
+        </div>
+      </div>
+      <div class="popover-testmedia-status" id="testMediaStatus" hidden></div>
       <button class="btn-remove" id="removeMonitorBtn">Remove Monitor</button>
     </div>
   </div>
@@ -183,7 +215,7 @@
   <dialog id="monitorFormDialog" aria-label="Add custom monitor" class="monitor-form-dialog">
     <form id="monitorForm" method="dialog" novalidate>
       <div class="mf-header">
-        <h2 class="mf-title">Add Monitor</h2>
+        <h2 class="mf-title" id="mfFormTitle">Add Monitor</h2>
         <button type="button" class="mf-close" id="monitorFormClose" aria-label="Close">&times;</button>
       </div>
       <div class="mf-body">
@@ -240,6 +272,12 @@
     </form>
   </dialog>
 
+  <!-- Hidden file inputs for load operations -->
+  <input type="file" id="loadSetupAInput" accept=".json" hidden>
+  <input type="file" id="loadSetupBInput" accept=".json" hidden>
+  <input type="file" id="importCatalogInput" accept=".json" hidden>
+  <input type="file" id="uploadTestMediaInput" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
+
   <!-- SCRIPTS (order matters) -->
   <script src="js/catalog.js"></script>
   <script src="js/state.js"></script>
@@ -248,6 +286,7 @@
   <script src="js/drag.js"></script>
   <script src="js/labels.js"></script>
   <script src="js/pip.js"></script>
+  <script src="js/testmedia.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>

@@ -132,22 +132,61 @@ const GRID = (() => {
     return STATE.getCell(setupIndex, row, col) === null;
   }
 
-  /**
-   * Compute total physical width of a setup (all occupied columns) in mm.
-   * Returns 0 if nothing is placed.
-   */
-  function totalWidth_mm(setupIndex) {
-    const { colWidths_mm } = calcDimensions(setupIndex);
-    return colWidths_mm.filter(w => w > 0).reduce((a, b) => a + b, 0);
-  }
+    /**
+     * Compute total physical width of a setup in mm.
+     * Uses the bounding box of all placed monitors (including manual offsetX)
+     * so empty drop areas are excluded and position adjustments are reflected.
+     * Returns 0 if nothing is placed.
+     */
+    function totalWidth_mm(setupIndex) {
+      const grid = STATE.getSetup(setupIndex).grid;
+      const dims = calcDimensions(setupIndex);
+      let minLeft = Infinity, maxRight = -Infinity;
+      for (let r = 0; r < MAX_ROWS; r++) {
+        for (let c = 0; c < MAX_COLS; c++) {
+          const cell = grid[r][c];
+          if (!cell) continue;
+          const mon = CATALOG.find(m => m.id === cell.monitorId);
+          if (!mon) continue;
+          const phys = _physicalSizeForCell(cell, mon);
+          const rect = cellRect(dims.colWidths, dims.rowHeights, r, c);
+          const left  = rect.x + (cell.offsetX || 0);
+          const right = left + phys.width_mm * _mmScale;
+          if (left  < minLeft)  minLeft  = left;
+          if (right > maxRight) maxRight = right;
+        }
+      }
+      if (!isFinite(minLeft)) return 0;
+      return (maxRight - minLeft) / _mmScale;
+    }
 
-  /**
-   * Compute max total physical height in mm (tallest row combination).
-   */
-  function totalHeight_mm(setupIndex) {
-    const { rowHeights_mm } = calcDimensions(setupIndex);
-    return rowHeights_mm.filter(h => h > 0).reduce((a, b) => a + b, 0);
-  }
+    /**
+     * Compute total physical height of a setup in mm.
+     * Uses the bounding box of all placed monitors (including manual offsetY)
+     * so empty drop areas are excluded and position adjustments are reflected.
+     * Returns 0 if nothing is placed.
+     */
+    function totalHeight_mm(setupIndex) {
+      const grid = STATE.getSetup(setupIndex).grid;
+      const dims = calcDimensions(setupIndex);
+      let minTop = Infinity, maxBottom = -Infinity;
+      for (let r = 0; r < MAX_ROWS; r++) {
+        for (let c = 0; c < MAX_COLS; c++) {
+          const cell = grid[r][c];
+          if (!cell) continue;
+          const mon = CATALOG.find(m => m.id === cell.monitorId);
+          if (!mon) continue;
+          const phys = _physicalSizeForCell(cell, mon);
+          const rect = cellRect(dims.colWidths, dims.rowHeights, r, c);
+          const top    = rect.y + (cell.offsetY || 0);
+          const bottom = top + phys.height_mm * _mmScale;
+          if (top    < minTop)    minTop    = top;
+          if (bottom > maxBottom) maxBottom = bottom;
+        }
+      }
+      if (!isFinite(minTop)) return 0;
+      return (maxBottom - minTop) / _mmScale;
+    }
 
   function mmToDisplay(mm) { return mm * _mmScale; }
 

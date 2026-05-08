@@ -34,7 +34,7 @@
   fill: transparent;
   stroke: transparent;
   stroke-dasharray: none;
-  pointer-events: none;
+  pointer-events: all;
 }
 
 .empty-cell-hint-hidden {
@@ -55,6 +55,15 @@
 .monitor-body.selected {
   stroke: var(--color-accent, #4a9eff);
   stroke-width: 2.5;
+}
+
+.monitor-dragging .monitor-body {
+  stroke: var(--color-accent, #4a9eff);
+  stroke-width: 2.5;
+}
+
+.monitor-dragging .monitor-selected-ring {
+  stroke-width: 3;
 }
 
 /* Monitor bezel inner screen area */
@@ -187,7 +196,7 @@
 /* ---- Multi-zone PiP (Screen Splitter) ---- */
 
 .pip-zone-body {
-  fill: rgba(240, 165, 0, 0.12);
+  fill: none;
   stroke: var(--color-accent2, #f0a500);
   stroke-width: 1.5;
   stroke-dasharray: 5 3;

@@ -52,6 +52,7 @@ const STATE = (() => {
 
   // Currently selected cell reference
   let _selected = null; // { setupIndex, row, col }
+  let _selectedZone = null; // { setupIndex, row, col, zoneId }
 
   /* ---- Internal helpers ---- */
 
@@ -65,6 +66,25 @@ const STATE = (() => {
 
   function _emit(setupIndex) {
     document.dispatchEvent(new CustomEvent('state:changed', { detail: { setupIndex } }));
+  }
+
+  function _clearSelectedZoneIfMatches(setupIndex, row, col) {
+    if (!_selectedZone) return;
+    if (_selectedZone.setupIndex !== setupIndex) return;
+    if (_selectedZone.row !== row || _selectedZone.col !== col) return;
+    _selectedZone = null;
+  }
+
+  function _normalizeTestMediaRef(ref, zoneId) {
+    if (!ref || typeof ref !== 'object') return null;
+    if (typeof ref.assetId !== 'string' || !ref.assetId.trim()) return null;
+
+    const next = {
+      assetId: ref.assetId.trim(),
+      placement: zoneId ? 'zone' : 'monitor'
+    };
+    if (zoneId) next.zoneId = zoneId;
+    return next;
   }
 
   function _validate(setupIndex, row, col) {
@@ -94,7 +114,9 @@ const STATE = (() => {
       offsetY: 0,
       pipZones: [],
       labels: [],
-      streamId: null
+      streamId: null,
+      monitorTestMediaRef: null,
+      monitorTestMediaScalingMode: 'center'
     };
     _reflowActivePipZones(setupIndex, null, true);
     _emit(setupIndex);
@@ -114,6 +136,7 @@ const STATE = (() => {
         _selected.col === col) {
       _selected = null;
     }
+    _clearSelectedZoneIfMatches(setupIndex, row, col);
     _reflowActivePipZones(setupIndex, null, true);
     _emit(setupIndex);
   }
@@ -133,6 +156,8 @@ const STATE = (() => {
     const dst = ws.setups[toSetup].grid[toRow][toCol];
     ws.setups[toSetup].grid[toRow][toCol] = src;
     ws.setups[fromSetup].grid[fromRow][fromCol] = dst; // null or swap
+    _clearSelectedZoneIfMatches(fromSetup, fromRow, fromCol);
+    _clearSelectedZoneIfMatches(toSetup, toRow, toCol);
 
     _reflowActivePipZones(fromSetup, null, true);
     _emit(fromSetup);
@@ -215,6 +240,9 @@ const STATE = (() => {
         zone.labels = previousZones[idx] && previousZones[idx].labels
           ? previousZones[idx].labels.slice(0, 1)
           : [];
+        zone.testMediaRef = previousZones[idx]
+          ? _normalizeTestMediaRef(previousZones[idx].testMediaRef, zone.id)
+          : null;
       });
     }
 
@@ -290,10 +318,73 @@ const STATE = (() => {
     if (!monitor || !monitor.pipSupported) return;
     if (count === 0) {
       cell.pipZones = [];
+      _clearSelectedZoneIfMatches(setupIndex, row, col);
     } else {
+      _clearSelectedZoneIfMatches(setupIndex, row, col);
       _rebuildPipZones(setupIndex, row, col, count, false);
     }
     _emit(setupIndex);
+  }
+
+  function setMonitorTestMedia(setupIndex, row, col, assetId) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return;
+
+    const next = (typeof assetId === 'string' && assetId.trim())
+      ? { assetId: assetId.trim(), placement: 'monitor' }
+      : null;
+
+    const currentId = cell.monitorTestMediaRef && cell.monitorTestMediaRef.assetId
+      ? cell.monitorTestMediaRef.assetId
+      : null;
+    const nextId = next ? next.assetId : null;
+    if (currentId === nextId) return;
+
+    cell.monitorTestMediaRef = next;
+    _emit(setupIndex);
+  }
+
+  function clearMonitorTestMedia(setupIndex, row, col) {
+    setMonitorTestMedia(setupIndex, row, col, null);
+  }
+
+  function setMonitorTestMediaScalingMode(setupIndex, row, col, mode) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return;
+
+    const valid = ['center', 'aspect', 'full'];
+    const nextMode = valid.includes(mode) ? mode : 'center';
+    if (cell.monitorTestMediaScalingMode === nextMode) return;
+
+    cell.monitorTestMediaScalingMode = nextMode;
+    _emit(setupIndex);
+  }
+
+  function setZoneTestMedia(setupIndex, row, col, zoneId, assetId) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell || !zoneId) return;
+    const zone = (cell.pipZones || []).find(z => z.id === zoneId);
+    if (!zone) return;
+
+    const next = (typeof assetId === 'string' && assetId.trim())
+      ? { assetId: assetId.trim(), placement: 'zone', zoneId }
+      : null;
+
+    const currentId = zone.testMediaRef && zone.testMediaRef.assetId
+      ? zone.testMediaRef.assetId
+      : null;
+    const nextId = next ? next.assetId : null;
+    if (currentId === nextId) return;
+
+    zone.testMediaRef = next;
+    _emit(setupIndex);
+  }
+
+  function clearZoneTestMedia(setupIndex, row, col, zoneId) {
+    setZoneTestMedia(setupIndex, row, col, zoneId, null);
   }
 
   /**
@@ -418,6 +509,7 @@ const STATE = (() => {
   function clearSetup(setupIndex) {
     ws.setups[setupIndex].grid = _emptyGrid();
     if (_selected && _selected.setupIndex === setupIndex) _selected = null;
+    if (_selectedZone && _selectedZone.setupIndex === setupIndex) _selectedZone = null;
     _emit(setupIndex);
   }
 
@@ -433,10 +525,21 @@ const STATE = (() => {
 
   function setSelected(setupIndex, row, col) {
     _selected = (setupIndex !== null) ? { setupIndex, row, col } : null;
+    _selectedZone = null;
     document.dispatchEvent(new CustomEvent('state:selection', { detail: _selected }));
   }
 
   function getSelected() { return _selected; }
+
+  function setSelectedZone(setupIndex, row, col, zoneId) {
+    _selectedZone = (setupIndex !== null && zoneId)
+      ? { setupIndex, row, col, zoneId }
+      : null;
+  }
+
+  function getSelectedZone() {
+    return _selectedZone;
+  }
 
   /** Get a cell value (read-only snapshot). */
   function getCell(setupIndex, row, col) {
@@ -448,14 +551,76 @@ const STATE = (() => {
     return ws.setups[setupIndex];
   }
 
+  /**
+   * Export a setup as a plain JSON-serializable object (deep clone).
+   * @param {number} setupIndex
+   * @returns {{ id:string, name:string, grid:Array }}
+   */
+  function exportSetup(setupIndex) {
+    return JSON.parse(JSON.stringify(ws.setups[setupIndex]));
+  }
+
+  /**
+   * Replace a setup's name and grid with imported data.
+   * Cells referencing unknown monitorIds are silently set to null.
+   * @param {number} setupIndex
+   * @param {{ name?:string, grid:Array }} data
+   */
+  function importSetup(setupIndex, data) {
+    if (!data || !Array.isArray(data.grid)) return;
+
+    // Normalise to 2 rows × 4 cols
+    const newGrid = _emptyGrid();
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 4; c++) {
+        const cell = data.grid[r] && data.grid[r][c];
+        if (!cell || !cell.monitorId) continue;
+        // Drop cells whose monitor is no longer in the catalog
+        if (!CATALOG.some(m => m.id === cell.monitorId)) continue;
+        const nextCell = JSON.parse(JSON.stringify(cell));
+        nextCell.monitorTestMediaRef = _normalizeTestMediaRef(nextCell.monitorTestMediaRef);
+        // Migrate legacy boolean auto-scale flag → mode enum
+        if (!['center', 'aspect', 'full'].includes(nextCell.monitorTestMediaScalingMode)) {
+          nextCell.monitorTestMediaScalingMode = nextCell.monitorTestMediaAutoScale ? 'full' : 'center';
+        }
+        delete nextCell.monitorTestMediaAutoScale;
+        if (Array.isArray(nextCell.pipZones)) {
+          nextCell.pipZones.forEach(zone => {
+            zone.testMediaRef = _normalizeTestMediaRef(zone.testMediaRef, zone.id);
+          });
+        }
+        newGrid[r][c] = nextCell;
+      }
+    }
+
+    ws.setups[setupIndex].grid = newGrid;
+    if (typeof data.name === 'string' && data.name.trim()) {
+      ws.setups[setupIndex].name = data.name.trim();
+    }
+
+    // Clear selection if it was inside the replaced setup
+    if (_selected && _selected.setupIndex === setupIndex) {
+      _selected = null;
+    }
+    if (_selectedZone && _selectedZone.setupIndex === setupIndex) {
+      _selectedZone = null;
+    }
+
+    _emit(setupIndex);
+  }
+
   return {
     placeMonitor, removeMonitor, moveMonitor,
     setResolution, setOrientation, setPipZones,
     setMonitorOffset, resetMonitorOffset,
+    setMonitorTestMedia, clearMonitorTestMedia, setMonitorTestMediaScalingMode,
+    setZoneTestMedia, clearZoneTestMedia,
     addLabel, updateLabel, removeLabel,
     addZoneLabel, updateZoneLabel, removeZoneLabel,
     setStream, clearStreams,
     clearSetup, renameSetup,
-    setSelected, getSelected, getCell, getSetup
+    setSelected, getSelected, setSelectedZone, getSelectedZone,
+    getCell, getSetup,
+    exportSetup, importSetup
   };
 })();
