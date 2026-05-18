@@ -42,11 +42,33 @@
 /* global CATALOG */
 
 const STATE = (() => {
+  const DESKTOP_DEFAULTS = Object.freeze({
+    enabled: false,
+    width_mm: 1400,
+    height_mm: 700,
+    x_offset_mm: 0,
+    reservedDepth_mm: 300 // Default reserved depth for screen stands
+  });
+
   /** @type {{ setups: Array<{ id:string, name:string, grid:Array<Array<object|null>> }> }} */
   const ws = {
     setups: [
-      { id: 'setup-0', name: 'Setup A', grid: _emptyGrid() },
-      { id: 'setup-1', name: 'Setup B', grid: _emptyGrid() }
+      {
+        id: 'setup-0',
+        name: 'Setup A',
+        grid: _emptyGrid(),
+        desktopConfig: _defaultDesktopConfig(),
+        desktopEquipment: [],
+        desktopMonitors: []
+      },
+      {
+        id: 'setup-1',
+        name: 'Setup B',
+        grid: _emptyGrid(),
+        desktopConfig: _defaultDesktopConfig(),
+        desktopEquipment: [],
+        desktopMonitors: []
+      }
     ]
   };
 
@@ -62,6 +84,103 @@ const STATE = (() => {
       [null, null, null, null],
       [null, null, null, null]
     ];
+  }
+
+  function _defaultDesktopConfig() {
+    return {
+      enabled: DESKTOP_DEFAULTS.enabled,
+      width_mm: DESKTOP_DEFAULTS.width_mm,
+      height_mm: DESKTOP_DEFAULTS.height_mm,
+      x_offset_mm: DESKTOP_DEFAULTS.x_offset_mm,
+      reservedDepth_mm: DESKTOP_DEFAULTS.reservedDepth_mm
+    };
+  }
+
+  function _normalizeDesktopOffset(value, fallback) {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return fallback;
+    return Math.max(-4000, Math.min(4000, Math.round(next)));
+  }
+
+  function _normalizeDesktopDimension(value, fallback) {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return fallback;
+    return Math.max(200, Math.min(4000, Math.round(next)));
+  }
+
+  function _normalizeReservedDepth(value, fallback) {
+    const next = Number(value);
+    if (!Number.isFinite(next)) return fallback;
+    return Math.max(50, Math.min(1000, Math.round(next))); // Allow range 50-1000 mm
+  }
+
+  function _normalizeDesktopConfig(config) {
+    const base = _defaultDesktopConfig();
+    if (!config || typeof config !== 'object') return base;
+    base.enabled = !!config.enabled;
+    base.width_mm = _normalizeDesktopDimension(config.width_mm, base.width_mm);
+    base.height_mm = _normalizeDesktopDimension(config.height_mm, base.height_mm);
+    base.x_offset_mm = _normalizeDesktopOffset(config.x_offset_mm, base.x_offset_mm);
+    base.reservedDepth_mm = _normalizeReservedDepth(config.reservedDepth_mm, base.reservedDepth_mm);
+    return base;
+  }
+
+  function _normalizeDesktopConfigFromSetupData(data) {
+    const raw = data && typeof data.desktopConfig === 'object' ? Object.assign({}, data.desktopConfig) : {};
+
+    // Legacy setup files may store reserved depth at top-level.
+    if (!Object.prototype.hasOwnProperty.call(raw, 'reservedDepth_mm') && data) {
+      raw.reservedDepth_mm = data.reservedDepth_mm;
+    }
+
+    return _normalizeDesktopConfig(raw);
+  }
+
+  function _normalizeDesktopEquipmentItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (typeof item.id !== 'string' || !item.id.trim()) return null;
+    if (typeof item.equipmentId !== 'string' || !item.equipmentId.trim()) return null;
+
+    const equipment = CATALOG.find(m => m.id === item.equipmentId && m.category === 'equipment');
+    if (!equipment) return null;
+
+    const x_mm = Number(item.x_mm);
+    const y_mm = Number(item.y_mm);
+    if (!Number.isFinite(x_mm) || !Number.isFinite(y_mm)) return null;
+
+    return {
+      id: item.id.trim(),
+      equipmentId: item.equipmentId.trim(),
+      x_mm,
+      y_mm
+    };
+  }
+
+  function _normalizeDesktopMonitorItem(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (typeof item.id !== 'string' || !item.id.trim()) return null;
+    if (typeof item.monitorId !== 'string' || !item.monitorId.trim()) return null;
+
+    const monitor = CATALOG.find(m => m.id === item.monitorId && m.category !== 'equipment');
+    if (!monitor) return null;
+
+    const x_mm = Number(item.x_mm);
+    const y_mm = Number(item.y_mm);
+    if (!Number.isFinite(x_mm) || !Number.isFinite(y_mm)) return null;
+
+    const orientation = item.orientation === 'portrait' ? 'portrait' : 'landscape';
+    const selectedResolution = item.selectedResolution && typeof item.selectedResolution === 'object'
+      ? item.selectedResolution
+      : monitor.resolutions[0];
+
+    return {
+      id: item.id.trim(),
+      monitorId: item.monitorId.trim(),
+      selectedResolution,
+      orientation,
+      x_mm,
+      y_mm
+    };
   }
 
   function _emit(setupIndex) {
@@ -508,9 +627,203 @@ const STATE = (() => {
    */
   function clearSetup(setupIndex) {
     ws.setups[setupIndex].grid = _emptyGrid();
+    ws.setups[setupIndex].desktopMonitors = [];
     if (_selected && _selected.setupIndex === setupIndex) _selected = null;
     if (_selectedZone && _selectedZone.setupIndex === setupIndex) _selectedZone = null;
     _emit(setupIndex);
+  }
+
+  function setDesktopConfig(setupIndex, nextConfig) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    const current = setup.desktopConfig || _defaultDesktopConfig();
+    const merged = _normalizeDesktopConfig(Object.assign({}, current, nextConfig || {}));
+
+    if (current.enabled === merged.enabled &&
+        current.width_mm === merged.width_mm &&
+        current.height_mm === merged.height_mm &&
+        current.x_offset_mm === merged.x_offset_mm &&
+        current.reservedDepth_mm === merged.reservedDepth_mm) {
+      return;
+    }
+
+    setup.desktopConfig = merged;
+    _emit(setupIndex);
+  }
+
+  function getDesktopConfig(setupIndex) {
+    const setup = ws.setups[setupIndex];
+    if (!setup) return _defaultDesktopConfig();
+    if (!setup.desktopConfig) setup.desktopConfig = _defaultDesktopConfig();
+    return setup.desktopConfig;
+  }
+
+  function getDesktopEquipment(setupIndex) {
+    const setup = ws.setups[setupIndex];
+    if (!setup) return [];
+    if (!Array.isArray(setup.desktopEquipment)) setup.desktopEquipment = [];
+    return setup.desktopEquipment;
+  }
+
+  function getDesktopMonitors(setupIndex) {
+    const setup = ws.setups[setupIndex];
+    if (!setup) return [];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+    return setup.desktopMonitors;
+  }
+
+  function addDesktopEquipment(setupIndex, equipmentId, x_mm, y_mm) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const equipment = CATALOG.find(m => m.id === equipmentId && m.category === 'equipment');
+    if (!equipment) throw new Error('Unknown equipment id: ' + equipmentId);
+
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopEquipment)) setup.desktopEquipment = [];
+
+    const item = {
+      id: 'deq-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      equipmentId,
+      x_mm: Number.isFinite(x_mm) ? x_mm : 0,
+      y_mm: Number.isFinite(y_mm) ? y_mm : 0,
+      label: ''  // Equipment label (e.g., 'Main Keyboard', 'Backup Mouse')
+    };
+
+    setup.desktopEquipment.push(item);
+    _emit(setupIndex);
+    return item;
+  }
+
+  function setEquipmentLabel(setupIndex, itemId, labelText) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopEquipment)) setup.desktopEquipment = [];
+
+    const item = setup.desktopEquipment.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const nextLabel = String(labelText || '').slice(0, 30);
+    if (item.label === nextLabel) return true;
+
+    item.label = nextLabel;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function moveDesktopEquipment(setupIndex, itemId, x_mm, y_mm) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopEquipment)) setup.desktopEquipment = [];
+
+    const item = setup.desktopEquipment.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const nextX = Number.isFinite(x_mm) ? x_mm : item.x_mm;
+    const nextY = Number.isFinite(y_mm) ? y_mm : item.y_mm;
+
+    if (item.x_mm === nextX && item.y_mm === nextY) return true;
+
+    item.x_mm = nextX;
+    item.y_mm = nextY;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function removeDesktopEquipment(setupIndex, itemId) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopEquipment)) setup.desktopEquipment = [];
+
+    const prevLen = setup.desktopEquipment.length;
+    setup.desktopEquipment = setup.desktopEquipment.filter(entry => entry.id !== itemId);
+    if (setup.desktopEquipment.length !== prevLen) {
+      _emit(setupIndex);
+      return true;
+    }
+    return false;
+  }
+
+  function addDesktopMonitor(setupIndex, monitorId, selectedResolution, orientation, x_mm, y_mm) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const monitor = CATALOG.find(m => m.id === monitorId && m.category !== 'equipment');
+    if (!monitor) throw new Error('Unknown monitor id: ' + monitorId);
+
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = {
+      id: 'dmon-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+      monitorId,
+      selectedResolution: selectedResolution || monitor.resolutions[0],
+      orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+      x_mm: Number.isFinite(x_mm) ? x_mm : 0,
+      y_mm: Number.isFinite(y_mm) ? y_mm : 0
+    };
+
+    setup.desktopMonitors.push(item);
+    _emit(setupIndex);
+    return item;
+  }
+
+  function moveDesktopMonitor(setupIndex, itemId, x_mm, y_mm) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const nextX = Number.isFinite(x_mm) ? x_mm : item.x_mm;
+    const nextY = Number.isFinite(y_mm) ? y_mm : item.y_mm;
+
+    if (item.x_mm === nextX && item.y_mm === nextY) return true;
+
+    item.x_mm = nextX;
+    item.y_mm = nextY;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function setDesktopMonitorResolution(setupIndex, itemId, resolution) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item || !resolution || typeof resolution !== 'object') return false;
+
+    item.selectedResolution = resolution;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function setDesktopMonitorOrientation(setupIndex, itemId, orientation) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const next = orientation === 'portrait' ? 'portrait' : 'landscape';
+    if (item.orientation === next) return true;
+
+    item.orientation = next;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function removeDesktopMonitor(setupIndex, itemId) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const prevLen = setup.desktopMonitors.length;
+    setup.desktopMonitors = setup.desktopMonitors.filter(entry => entry.id !== itemId);
+    if (setup.desktopMonitors.length !== prevLen) {
+      _emit(setupIndex);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -557,7 +870,9 @@ const STATE = (() => {
    * @returns {{ id:string, name:string, grid:Array }}
    */
   function exportSetup(setupIndex) {
-    return JSON.parse(JSON.stringify(ws.setups[setupIndex]));
+    const exported = JSON.parse(JSON.stringify(ws.setups[setupIndex]));
+    exported.desktopConfig = _normalizeDesktopConfig(exported.desktopConfig);
+    return exported;
   }
 
   /**
@@ -594,6 +909,13 @@ const STATE = (() => {
     }
 
     ws.setups[setupIndex].grid = newGrid;
+    ws.setups[setupIndex].desktopConfig = _normalizeDesktopConfigFromSetupData(data);
+    ws.setups[setupIndex].desktopEquipment = Array.isArray(data.desktopEquipment)
+      ? data.desktopEquipment.map(_normalizeDesktopEquipmentItem).filter(Boolean)
+      : [];
+    ws.setups[setupIndex].desktopMonitors = Array.isArray(data.desktopMonitors)
+      ? data.desktopMonitors.map(_normalizeDesktopMonitorItem).filter(Boolean)
+      : [];
     if (typeof data.name === 'string' && data.name.trim()) {
       ws.setups[setupIndex].name = data.name.trim();
     }
@@ -609,10 +931,33 @@ const STATE = (() => {
     _emit(setupIndex);
   }
 
+  /**
+   * Updates the reserved depth for a specific setup.
+   * @param {number} setupIndex - The index of the setup to update.
+   * @param {number} newDepth - The new reserved depth in mm.
+   */
+  function updateReservedDepth(setupIndex, newDepth) {
+    if (setupIndex < 0 || setupIndex >= ws.setups.length) {
+      console.error('Invalid setup index:', setupIndex);
+      return;
+    }
+
+    const setup = ws.setups[setupIndex];
+    setup.desktopConfig.reservedDepth_mm = _normalizeReservedDepth(newDepth, DESKTOP_DEFAULTS.reservedDepth_mm);
+
+    // Emit state change event
+    const event = new CustomEvent('state:changed', { detail: { setupIndex } });
+    document.dispatchEvent(event);
+  }
+
   return {
     placeMonitor, removeMonitor, moveMonitor,
     setResolution, setOrientation, setPipZones,
     setMonitorOffset, resetMonitorOffset,
+    setDesktopConfig, getDesktopConfig,
+    addDesktopEquipment, moveDesktopEquipment, removeDesktopEquipment, getDesktopEquipment, setEquipmentLabel,
+    addDesktopMonitor, moveDesktopMonitor, setDesktopMonitorResolution, setDesktopMonitorOrientation,
+    removeDesktopMonitor, getDesktopMonitors,
     setMonitorTestMedia, clearMonitorTestMedia, setMonitorTestMediaScalingMode,
     setZoneTestMedia, clearZoneTestMedia,
     addLabel, updateLabel, removeLabel,
@@ -621,6 +966,7 @@ const STATE = (() => {
     clearSetup, renameSetup,
     setSelected, getSelected, setSelectedZone, getSelectedZone,
     getCell, getSetup,
-    exportSetup, importSetup
+    exportSetup, importSetup,
+    updateReservedDepth
   };
 })();

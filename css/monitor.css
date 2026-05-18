@@ -81,7 +81,7 @@
 /* Monitor label text (size + resolution) */
 .monitor-label-size {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   fill: var(--color-accent, #4a9eff);
   dominant-baseline: auto;
@@ -91,8 +91,8 @@
 
 .monitor-label-res {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 10px;
-  font-weight: 400;
+  font-size: 19px;
+  font-weight: 600;
   fill: var(--color-text-dim, #8a90a4);
   dominant-baseline: auto;
   text-anchor: middle;
@@ -101,7 +101,7 @@
 
 .monitor-label-brand {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 9px;
+  font-size: 15px;
   fill: var(--color-text-dim, #8a90a4);
   dominant-baseline: auto;
   text-anchor: middle;
@@ -159,7 +159,7 @@
 
 .dim-text {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: 16.9px;
   fill: var(--color-text-dim, #8a90a4);
   dominant-baseline: auto;
   text-anchor: middle;
@@ -238,6 +238,76 @@
 
 .pip-zone-add-label:hover .pip-zone-add-label-bg {
   fill: var(--color-accent2, #f0a500);
+}
+
+.desktop-surface {
+  fill: rgba(56, 63, 78, 0.55);
+  stroke: rgba(150, 167, 200, 0.45);
+  stroke-width: 1.5;
+  cursor: grab;
+}
+
+.desktop-monitor-body {
+  stroke: rgba(121, 184, 248, 0.85);
+}
+
+.desktop-label {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 19.5px;
+  font-weight: 600;
+  fill: var(--color-text-dim, #8a90a4);
+  pointer-events: none;
+}
+
+.desktop-stands-reserved-zone {
+  fill: rgba(255, 183, 77, 0.10);
+  stroke: rgba(255, 183, 77, 0.8);
+  stroke-width: 1.4;
+  stroke-dasharray: 7 5;
+  pointer-events: none;
+}
+
+.desktop-stands-reserved-label {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  fill: rgba(255, 214, 153, 0.95);
+  pointer-events: none;
+}
+
+.desktop-equipment-body {
+  fill: rgba(69, 145, 220, 0.32);
+  stroke: rgba(121, 184, 248, 0.95);
+  stroke-width: 1.2;
+}
+
+.desktop-equipment-label {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  fill: #d9e7fb;
+  pointer-events: none;
+}
+
+.desktop-equipment-label-custom {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  fill: #f1f7ff;
+  pointer-events: none;
+}
+
+.desktop-equipment-label-model {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  fill: rgba(217, 231, 251, 0.72);
+  pointer-events: none;
+}
+
+.equipment-dragging .desktop-equipment-body {
+  stroke-width: 2;
+  stroke: var(--color-accent, #4a9eff);
 }
 
 .pip-zone-add-label-text {

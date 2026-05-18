@@ -220,8 +220,47 @@ body.is-dragging-monitor * {
   display: flex;
   align-items: center;
   gap: 6px;
+  font-size: 15.6px;
+  color: var(--color-text-dim);
+}
+
+.setup-desktop-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface2);
+  font-size: 14px;
+}
+
+.desktop-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.desktop-size-label {
   font-size: 12px;
   color: var(--color-text-dim);
+}
+
+.desktop-size-input {
+  width: 62px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 13px;
+}
+
+.desktop-size-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.25);
 }
 
 .info-sep { color: var(--color-border); }
@@ -239,8 +278,8 @@ body.is-dragging-monitor * {
   background: var(--color-surface2);
   color: var(--color-text);
   border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 4px 10px;
+  font-size: 14px;
   cursor: pointer;
   transition: all var(--transition);
 }
@@ -267,7 +306,7 @@ body.is-dragging-monitor * {
   min-width: 44px;
   text-align: center;
   color: var(--color-text-dim);
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 700;
 }
 

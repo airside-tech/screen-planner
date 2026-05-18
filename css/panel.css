@@ -125,6 +125,15 @@
   margin-top: 1px;
 }
 
+.equipment-card {
+  border-color: rgba(121, 184, 248, 0.45);
+}
+
+.equipment-icon {
+  background: rgba(74, 158, 255, 0.12);
+  color: #89c6ff;
+}
+
 .card-pip-badge {
   flex-shrink: 0;
   font-size: 9px;

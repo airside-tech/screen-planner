@@ -31,6 +31,7 @@ const GRID = (() => {
   const MARGIN_LEFT   = 60;  // space for row-height annotations on the left
   const MARGIN_BOTTOM = 50;  // space for col-width annotations below
   const MARGIN_RIGHT  = 10;
+  const DESKTOP_GAP = 24;
 
   let _mmScale = 0.8;
 
@@ -101,15 +102,46 @@ const GRID = (() => {
     return { x, y, w: colWidths[col], h: rowHeights[row] };
   }
 
+  function _gridSize(colWidths, rowHeights) {
+    const totalW = colWidths.reduce((a, b) => a + b, 0) + CELL_GAP * (MAX_COLS - 1);
+    const totalH = rowHeights.reduce((a, b) => a + b, 0) + CELL_GAP * (MAX_ROWS - 1);
+    return { totalW, totalH };
+  }
+
+  function desktopRect(setupIndex, colWidths, rowHeights) {
+    const setup = STATE.getSetup(setupIndex);
+    if (!setup || !setup.desktopConfig || !setup.desktopConfig.enabled) return null;
+
+    const { totalW, totalH } = _gridSize(colWidths, rowHeights);
+    const desktopW = mmToDisplay(setup.desktopConfig.width_mm || 0);
+    const desktopH = mmToDisplay(setup.desktopConfig.height_mm || 0);
+    if (desktopW <= 0 || desktopH <= 0) return null;
+
+    const anchorX = MARGIN_LEFT;
+    const baseX = desktopW <= totalW
+      ? anchorX + (totalW - desktopW) / 2
+      : anchorX;
+    const requestedOffsetPx = mmToDisplay(setup.desktopConfig.x_offset_mm || 0);
+    const minX = MARGIN_LEFT;
+    const maxX = MARGIN_LEFT + Math.max(0, totalW - desktopW);
+    const x = Math.max(minX, Math.min(maxX, baseX + requestedOffsetPx));
+    const y = MARGIN_TOP + totalH + MARGIN_BOTTOM + DESKTOP_GAP;
+    return { x, y, w: desktopW, h: desktopH };
+  }
+
   /**
    * Total SVG canvas size needed.
    */
-  function svgSize(colWidths, rowHeights) {
-    const totalW = colWidths.reduce((a, b) => a + b, 0) + CELL_GAP * (MAX_COLS - 1);
-    const totalH = rowHeights.reduce((a, b) => a + b, 0) + CELL_GAP * (MAX_ROWS - 1);
+  function svgSize(colWidths, rowHeights, setupIndex) {
+    const { totalW, totalH } = _gridSize(colWidths, rowHeights);
+    const desktop = Number.isInteger(setupIndex)
+      ? desktopRect(setupIndex, colWidths, rowHeights)
+      : null;
+    const contentW = Math.max(totalW, desktop ? desktop.w : 0);
+    const contentH = totalH + (desktop ? (MARGIN_BOTTOM + DESKTOP_GAP + desktop.h) : 0);
     return {
-      width:  MARGIN_LEFT + totalW + MARGIN_RIGHT,
-      height: MARGIN_TOP  + totalH + MARGIN_BOTTOM
+      width:  MARGIN_LEFT + contentW + MARGIN_RIGHT,
+      height: MARGIN_TOP  + contentH + MARGIN_BOTTOM
     };
   }
 
@@ -193,8 +225,9 @@ const GRID = (() => {
   return {
     MAX_ROWS, MAX_COLS, CELL_GAP,
     MARGIN_TOP, MARGIN_LEFT, MARGIN_BOTTOM, MARGIN_RIGHT,
+    DESKTOP_GAP,
     EMPTY_CELL_W, EMPTY_CELL_H,
-    init, calcDimensions, cellRect, svgSize,
+    init, calcDimensions, cellRect, desktopRect, svgSize,
     occupiedCount, canPlace,
     totalWidth_mm, totalHeight_mm,
     mmToDisplay

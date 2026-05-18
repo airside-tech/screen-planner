@@ -228,6 +228,51 @@ let CATALOG = [
       { label: '2560×1440 (QHD, 60Hz)', width: 2560, height: 1440, refresh: 60 },
       { label: '1920×1080 (FHD, 60Hz)', width: 1920, height: 1080, refresh: 60 }
     ]
+  },
+  {
+    id: 'desk-keyboard-full',
+    builtIn: true,
+    category: 'equipment',
+    type: 'keyboard',
+    size: 0,
+    brand: 'Generic',
+    modelName: 'Full Keyboard',
+    panelType: 'Accessory',
+    physicalWidth_mm: 440,
+    physicalHeight_mm: 140,
+    aspectRatio: '3.14:1',
+    pipSupported: false,
+    resolutions: []
+  },
+  {
+    id: 'desk-keyboard-compact',
+    builtIn: true,
+    category: 'equipment',
+    type: 'keyboard-compact',
+    size: 0,
+    brand: 'Generic',
+    modelName: 'Compact Keyboard',
+    panelType: 'Accessory',
+    physicalWidth_mm: 320,
+    physicalHeight_mm: 120,
+    aspectRatio: '2.67:1',
+    pipSupported: false,
+    resolutions: []
+  },
+  {
+    id: 'desk-mouse',
+    builtIn: true,
+    category: 'equipment',
+    type: 'mouse',
+    size: 0,
+    brand: 'Generic',
+    modelName: 'Mouse',
+    panelType: 'Accessory',
+    physicalWidth_mm: 68,
+    physicalHeight_mm: 122,
+    aspectRatio: '0.56:1',
+    pipSupported: false,
+    resolutions: []
   }
 ];
 

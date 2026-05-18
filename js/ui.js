@@ -10,10 +10,38 @@
    POPOVER
    ================================================================ */
 const POPOVER = (() => {
-  let _current = null; // { setupIndex, row, col }
+  let _current = null; // { type:'grid', setupIndex, row, col } | { type:'desktop-monitor', setupIndex, itemId } | { type:'equipment', setupIndex, itemId }
 
   const el   = id => document.getElementById(id);
   const popEl = () => el('monitorPopover');
+
+  function _isDesktopMonitorCurrent() {
+    return !!(_current && _current.type === 'desktop-monitor');
+  }
+
+  function _isEquipmentCurrent() {
+    return !!(_current && _current.type === 'equipment');
+  }
+
+  function _getDesktopMonitorCurrent() {
+    if (!_isDesktopMonitorCurrent()) return null;
+    const item = STATE.getDesktopMonitors(_current.setupIndex)
+      .find(entry => entry.id === _current.itemId);
+    if (!item) return null;
+    const monitor = CATALOG.find(m => m.id === item.monitorId && m.category !== 'equipment');
+    if (!monitor) return null;
+    return { item, monitor };
+  }
+
+  function _getEquipmentCurrent() {
+    if (!_isEquipmentCurrent()) return null;
+    const item = STATE.getDesktopEquipment(_current.setupIndex)
+      .find(entry => entry.id === _current.itemId);
+    if (!item) return null;
+    const equipment = CATALOG.find(e => e.id === item.equipmentId && e.category === 'equipment');
+    if (!equipment) return null;
+    return { item, equipment };
+  }
 
   function _resolutionTierTag(width, height) {
     const longEdge = Math.max(width || 0, height || 0);
@@ -40,6 +68,91 @@ const POPOVER = (() => {
   function _syncPopoverFields() {
     if (!_current) return null;
 
+    const isDesktopMonitor = _isDesktopMonitorCurrent();
+    const isEquipment = _isEquipmentCurrent();
+    const selector = el('pipZoneSelector');
+    const pipRow = selector ? selector.closest('.popover-row') : null;
+    const testMediaRow = el('popoverTestMediaRow');
+    const autoScaleRow = el('popoverAutoScaleRow');
+    const statusEl = el('testMediaStatus');
+    const removeBtn = el('removeMonitorBtn');
+    const resolutionPickerControl = el('resolutionPicker');
+    const orientationPickerControl = el('orientationPicker');
+    const addLabelBtn = el('addLabelBtn');
+    const resolutionLabel = document.querySelector('label[for="resolutionPicker"]');
+    const orientationLabel = document.querySelector('label[for="orientationPicker"]');
+
+    // Hide monitor-only controls for equipment items.
+    if (resolutionPickerControl) resolutionPickerControl.hidden = isEquipment;
+    if (orientationPickerControl) orientationPickerControl.hidden = isEquipment;
+    if (resolutionLabel) resolutionLabel.hidden = isEquipment;
+    if (orientationLabel) orientationLabel.hidden = isEquipment;
+    if (pipRow) pipRow.hidden = isDesktopMonitor || isEquipment;
+    if (addLabelBtn) {
+      addLabelBtn.hidden = isDesktopMonitor;
+      addLabelBtn.textContent = isEquipment ? 'Edit Label' : 'Add Label';
+    }
+    if (removeBtn) {
+      if (isEquipment) {
+        removeBtn.textContent = 'Remove Equipment';
+      } else {
+        removeBtn.textContent = isDesktopMonitor ? 'Remove Desktop Monitor' : 'Remove Monitor';
+      }
+    }
+
+    if (isEquipment) {
+      if (testMediaRow) testMediaRow.hidden = true;
+      if (autoScaleRow) autoScaleRow.hidden = true;
+      if (statusEl) statusEl.hidden = true;
+
+      const equipmentData = _getEquipmentCurrent();
+      if (!equipmentData) return null;
+      const { item, equipment } = equipmentData;
+
+      el('popoverTitle').textContent = equipment.modelName;
+
+      return { item, equipment, isEquipment: true };
+    }
+
+    if (isDesktopMonitor) {
+      if (testMediaRow) testMediaRow.hidden = true;
+      if (autoScaleRow) autoScaleRow.hidden = true;
+      if (statusEl) statusEl.hidden = true;
+
+      const desktopData = _getDesktopMonitorCurrent();
+      if (!desktopData) return null;
+      const { item, monitor } = desktopData;
+
+      el('popoverTitle').textContent = `${monitor.size}" ${monitor.brand} — ${monitor.modelName}`;
+
+      const resPicker = el('resolutionPicker');
+      if (resPicker) {
+        resPicker.innerHTML = '';
+        monitor.resolutions.forEach((res, i) => {
+          const opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = _formatResolution(res, item.orientation || 'landscape');
+
+          const matchesLabel = item.selectedResolution && res.label && item.selectedResolution.label
+            ? res.label === item.selectedResolution.label
+            : false;
+          const matchesDims = item.selectedResolution &&
+            res.width === item.selectedResolution.width &&
+            res.height === item.selectedResolution.height &&
+            res.refresh === item.selectedResolution.refresh;
+          if (matchesLabel || matchesDims) {
+            opt.selected = true;
+          }
+          resPicker.appendChild(opt);
+        });
+      }
+
+      const orientationPicker = el('orientationPicker');
+      if (orientationPicker) orientationPicker.value = item.orientation || 'landscape';
+
+      return { item, monitor, isDesktopMonitor: true };
+    }
+
     const cell = STATE.getCell(_current.setupIndex, _current.row, _current.col);
     const monitor = cell ? CATALOG.find(m => m.id === cell.monitorId) : null;
     if (!monitor) return null;
@@ -63,7 +176,6 @@ const POPOVER = (() => {
     const orientationPicker = el('orientationPicker');
     if (orientationPicker) orientationPicker.value = cell.orientation || 'landscape';
 
-    const selector = el('pipZoneSelector');
     if (selector) {
       const currentCount = cell.pipZones ? cell.pipZones.length : 0;
       const canPip = monitor.pipSupported;
@@ -74,9 +186,6 @@ const POPOVER = (() => {
       });
     }
 
-    const testMediaRow = el('popoverTestMediaRow');
-    const autoScaleRow = el('popoverAutoScaleRow');
-    const statusEl = el('testMediaStatus');
     const clearMonitorBtn = el('clearMonitorMediaBtn');
     const clearZoneBtn = el('clearZoneMediaBtn');
     const testMediaEnabled = typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled();
@@ -143,7 +252,7 @@ const POPOVER = (() => {
   }
 
   function show(setupIndex, row, col, monitorGroupEl, rect) {
-    _current = { setupIndex, row, col };
+    _current = { type: 'grid', setupIndex, row, col };
     const data = _syncPopoverFields();
     if (!data) return;
 
@@ -173,6 +282,32 @@ const POPOVER = (() => {
     });
   }
 
+  function showDesktopMonitor(setupIndex, itemId, anchorClientRect) {
+    _current = { type: 'desktop-monitor', setupIndex, itemId };
+    const data = _syncPopoverFields();
+    if (!data) return;
+
+    const pop = popEl();
+    const rect = anchorClientRect || { left: window.innerWidth / 2, top: window.innerHeight / 2, width: 0, right: window.innerWidth / 2 };
+    const width = Number.isFinite(rect.width) ? rect.width : 0;
+    let px = (Number.isFinite(rect.right) ? rect.right : (rect.left || 0)) + 8;
+    let py = Number.isFinite(rect.top) ? rect.top : 0;
+
+    pop.removeAttribute('hidden');
+    pop.style.left = px + 'px';
+    pop.style.top = py + 'px';
+
+    requestAnimationFrame(() => {
+      const pr = pop.getBoundingClientRect();
+      if (pr.right > window.innerWidth - 8) {
+        pop.style.left = (px - width - pr.width - 16) + 'px';
+      }
+      if (pr.bottom > window.innerHeight - 8) {
+        pop.style.top = (window.innerHeight - pr.height - 8) + 'px';
+      }
+    });
+  }
+
   function hide() {
     popEl().setAttribute('hidden', '');
     _current = null;
@@ -186,6 +321,14 @@ const POPOVER = (() => {
 
     el('resolutionPicker').addEventListener('change', e => {
       if (!_current) return;
+      if (_isDesktopMonitorCurrent()) {
+        const desktopData = _getDesktopMonitorCurrent();
+        if (!desktopData) return;
+        const idx = parseInt(e.target.value, 10);
+        STATE.setDesktopMonitorResolution(_current.setupIndex, _current.itemId, desktopData.monitor.resolutions[idx]);
+        _syncPopoverFields();
+        return;
+      }
       const cell = STATE.getCell(_current.setupIndex, _current.row, _current.col);
       if (!cell) return;
       const monitor = CATALOG.find(m => m.id === cell.monitorId);
@@ -196,6 +339,11 @@ const POPOVER = (() => {
 
     el('orientationPicker').addEventListener('change', e => {
       if (!_current) return;
+      if (_isDesktopMonitorCurrent()) {
+        STATE.setDesktopMonitorOrientation(_current.setupIndex, _current.itemId, e.target.value);
+        _syncPopoverFields();
+        return;
+      }
       STATE.setOrientation(_current.setupIndex, _current.row, _current.col, e.target.value);
       CANVAS.openCellPopover(_current.setupIndex, _current.row, _current.col);
     });
@@ -206,6 +354,7 @@ const POPOVER = (() => {
       selector.addEventListener('click', e => {
         const btn = e.target.closest('.btn-pip-zone');
         if (!btn || !_current) return;
+        if (_isDesktopMonitorCurrent()) return;
         const count = parseInt(btn.dataset.count, 10);
         STATE.setPipZones(_current.setupIndex, _current.row, _current.col, count);
         // Update active state immediately
@@ -217,14 +366,33 @@ const POPOVER = (() => {
 
     el('addLabelBtn').addEventListener('click', () => {
       if (!_current) return;
-      const current = { ..._current };
-      hide();
-      LABELS.addLabel(current.setupIndex, current.row, current.col);
+      if (_isEquipmentCurrent()) {
+        // For equipment, show label editor
+        const equipmentData = _getEquipmentCurrent();
+        if (!equipmentData) return;
+        const labelText = prompt('Enter label for this equipment (max 30 characters):', equipmentData.item.label || '');
+        if (labelText !== null) {
+          STATE.setEquipmentLabel(_current.setupIndex, _current.itemId, labelText);
+          _syncPopoverFields();
+        }
+      } else if (_isDesktopMonitorCurrent()) {
+        return;
+      } else {
+        const current = { ..._current };
+        hide();
+        LABELS.addLabel(current.setupIndex, current.row, current.col);
+      }
     });
 
     el('removeMonitorBtn').addEventListener('click', () => {
       if (!_current) return;
-      STATE.removeMonitor(_current.setupIndex, _current.row, _current.col);
+      if (_isEquipmentCurrent()) {
+        STATE.removeDesktopEquipment(_current.setupIndex, _current.itemId);
+      } else if (_isDesktopMonitorCurrent()) {
+        STATE.removeDesktopMonitor(_current.setupIndex, _current.itemId);
+      } else {
+        STATE.removeMonitor(_current.setupIndex, _current.row, _current.col);
+      }
       hide();
     });
 
@@ -232,6 +400,7 @@ const POPOVER = (() => {
     if (clearMonitorBtn) {
       clearMonitorBtn.addEventListener('click', () => {
         if (!_current || !STATE.clearMonitorTestMedia) return;
+        if (_isDesktopMonitorCurrent()) return;
         STATE.clearMonitorTestMedia(_current.setupIndex, _current.row, _current.col);
         _syncPopoverFields();
       });
@@ -241,6 +410,7 @@ const POPOVER = (() => {
     if (clearZoneBtn) {
       clearZoneBtn.addEventListener('click', () => {
         if (!_current || !STATE.clearZoneTestMedia || !STATE.getSelectedZone) return;
+        if (_isDesktopMonitorCurrent()) return;
         const selectedZone = STATE.getSelectedZone();
         if (!selectedZone) return;
         if (selectedZone.setupIndex !== _current.setupIndex ||
@@ -256,6 +426,7 @@ const POPOVER = (() => {
     document.querySelectorAll('.btn-testmedia-scale').forEach(btn => {
       btn.addEventListener('click', () => {
         if (!_current || !STATE.setMonitorTestMediaScalingMode) return;
+        if (_isDesktopMonitorCurrent()) return;
         STATE.setMonitorTestMediaScalingMode(
           _current.setupIndex,
           _current.row,
@@ -270,13 +441,39 @@ const POPOVER = (() => {
     document.addEventListener('click', e => {
       if (_current &&
           !e.target.closest('.popover') &&
-          !e.target.closest('[data-role="monitor"]')) {
+          !e.target.closest('[data-role="monitor"]') &&
+          !e.target.closest('[data-role="desktop-monitor"]') &&
+          !e.target.closest('[data-role="desktop-equipment"]')) {
         hide();
       }
     });
   }
 
-  return { init, show, hide, getCurrent };
+  function openEquipmentPopover(setupIndex, itemId, clientX, clientY) {
+    _current = { type: 'equipment', setupIndex, itemId };
+    const data = _syncPopoverFields();
+    if (!data) return;
+
+    const pop = popEl();
+    let px = clientX + 12;
+    let py = clientY + 12;
+
+    pop.removeAttribute('hidden');
+    pop.style.left = px + 'px';
+    pop.style.top = py + 'px';
+
+    requestAnimationFrame(() => {
+      const pr = pop.getBoundingClientRect();
+      if (pr.right > window.innerWidth - 8) {
+        pop.style.left = (clientX - pr.width - 12) + 'px';
+      }
+      if (pr.bottom > window.innerHeight - 8) {
+        pop.style.top = (window.innerHeight - pr.height - 8) + 'px';
+      }
+    });
+  }
+
+  return { init, show, showDesktopMonitor, openEquipmentPopover, hide, getCurrent };
 })();
 
 /* ================================================================
@@ -303,9 +500,11 @@ const UI = (() => {
 
   function init() {
     _renderCatalog(null);
+    _renderEquipmentCatalog();
     _bindSidebarToggle();
     _bindClearButtons();
     _bindTitleEdits();
+    _bindDesktopControls();
     _bindFilterSelect();
     _bindZoomControls();
     _bindWheelZoom();
@@ -319,6 +518,8 @@ const UI = (() => {
     _bindTestMediaLibrary();
     _updateInfoStrip(0);
     _updateInfoStrip(1);
+    _syncDesktopControls(0);
+    _syncDesktopControls(1);
     _updateZoomReadout(0);
     _updateZoomReadout(1);
     _applySetupVisibility();
@@ -326,6 +527,7 @@ const UI = (() => {
 
     document.addEventListener('state:changed', e => {
       _updateInfoStrip(e.detail.setupIndex);
+      _syncDesktopControls(e.detail.setupIndex);
       _updateZoomReadout(e.detail.setupIndex);
       // Re-attach SVG drop targets after each re-render
       DRAG.attachSvgDropTargets();
@@ -358,9 +560,10 @@ const UI = (() => {
     if (!list) return;
     list.innerHTML = '';
 
-    const monitors = filterSize
+    const monitors = (filterSize
       ? CATALOG.filter(m => m.size === filterSize)
-      : catalogGetAll();
+      : catalogGetAll())
+      .filter(m => m.category !== 'equipment');
 
     monitors.forEach(mon => {
       const card = document.createElement('div');
@@ -435,7 +638,7 @@ const UI = (() => {
         card.appendChild(delBtn);
       }
 
-      DRAG.attachCatalogDrag(card, mon.id);
+      DRAG.attachCatalogDrag(card, mon.id, 'monitor');
 
       // Keyboard: Enter/Space to place in first available cell
       card.addEventListener('keydown', e => {
@@ -445,6 +648,44 @@ const UI = (() => {
         }
       });
 
+      list.appendChild(card);
+    });
+  }
+
+  function _renderEquipmentCatalog() {
+    const list = document.getElementById('equipmentList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    const equipment = CATALOG.filter(item => item.category === 'equipment');
+    equipment.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'catalog-card equipment-card';
+      card.setAttribute('role', 'listitem');
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('aria-label', `${item.brand} ${item.modelName}`);
+
+      const icon = document.createElement('div');
+      icon.className = 'card-icon equipment-icon';
+      icon.setAttribute('aria-hidden', 'true');
+      icon.textContent = item.type === 'mouse' ? 'Mouse' : 'Desk';
+      card.appendChild(icon);
+
+      const info = document.createElement('div');
+      info.className = 'card-info';
+
+      const model = document.createElement('div');
+      model.className = 'card-model';
+      model.textContent = item.modelName;
+      info.appendChild(model);
+
+      const meta = document.createElement('div');
+      meta.className = 'card-meta';
+      meta.textContent = `${item.physicalWidth_mm}×${item.physicalHeight_mm} mm`;
+      info.appendChild(meta);
+
+      card.appendChild(info);
+      DRAG.attachCatalogDrag(card, item.id, 'equipment');
       list.appendChild(card);
     });
   }
@@ -517,6 +758,46 @@ const UI = (() => {
         if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
       });
     });
+  }
+
+  function _bindDesktopControls() {
+    ['A', 'B'].forEach((suffix, setupIndex) => {
+      const enabled = document.getElementById('desktopEnabled' + suffix);
+      const width = document.getElementById('desktopWidth' + suffix);
+      const height = document.getElementById('desktopHeight' + suffix);
+      if (!enabled || !width || !height) return;
+
+      enabled.addEventListener('change', () => {
+        STATE.setDesktopConfig(setupIndex, { enabled: enabled.checked });
+      });
+
+      const onSizeChange = () => {
+        STATE.setDesktopConfig(setupIndex, {
+          width_mm: parseInt(width.value, 10),
+          height_mm: parseInt(height.value, 10)
+        });
+      };
+
+      width.addEventListener('change', onSizeChange);
+      height.addEventListener('change', onSizeChange);
+    });
+  }
+
+  function _syncDesktopControls(setupIndex) {
+    const suffix = setupIndex === 0 ? 'A' : 'B';
+    const enabled = document.getElementById('desktopEnabled' + suffix);
+    const width = document.getElementById('desktopWidth' + suffix);
+    const height = document.getElementById('desktopHeight' + suffix);
+    const reservedDepth = document.getElementById('desktopReservedDepth' + suffix);
+    if (!enabled || !width || !height) return;
+
+    const config = STATE.getDesktopConfig(setupIndex);
+    enabled.checked = !!config.enabled;
+    width.value = String(config.width_mm);
+    height.value = String(config.height_mm);
+    if (reservedDepth) reservedDepth.value = String(config.reservedDepth_mm);
+    width.disabled = !config.enabled;
+    height.disabled = !config.enabled;
   }
 
   /* ---- Filter select ---- */
@@ -672,8 +953,8 @@ const UI = (() => {
     const w = GRID.totalWidth_mm(setupIndex);
     const h = GRID.totalHeight_mm(setupIndex);
 
-    wEl.textContent = w > 0 ? `Width: ${w}mm (${(w/10).toFixed(1)}cm)` : 'Width: —';
-    hEl.textContent = h > 0 ? `Height: ${h}mm (${(h/10).toFixed(1)}cm)` : 'Height: —';
+    wEl.textContent = w > 0 ? `Width: ${Math.round(w)}mm (${(w/10).toFixed(1)}cm)` : 'Width: —';
+    hEl.textContent = h > 0 ? `Height: ${Math.round(h)}mm (${(h/10).toFixed(1)}cm)` : 'Height: —';
   }
 
   /* ---- Add custom monitor dialog ---- */
@@ -1130,6 +1411,24 @@ const UI = (() => {
       list.appendChild(card);
     });
   }
+
+  // Bind reserved depth input to state update
+  function _bindReservedDepthInput(setupIndex) {
+    const inputId = setupIndex === 0 ? 'desktopReservedDepthA' : 'desktopReservedDepthB';
+    const input = document.getElementById(inputId);
+    if (!input) return;
+
+    input.addEventListener('input', () => {
+      const newDepth = parseInt(input.value, 10);
+      if (Number.isFinite(newDepth)) {
+        STATE.updateReservedDepth(setupIndex, newDepth);
+      }
+    });
+  }
+
+  // Call binding function for both setups
+  _bindReservedDepthInput(0);
+  _bindReservedDepthInput(1);
 
   return { init };
 })();

@@ -11,11 +11,11 @@
  * to provide visual ghost feedback, since SVG drag-image isn't configurable.
  */
 
-/* global CATALOG, STATE, GRID, CANVAS, POPOVER, TEST_MEDIA */
+/* global CATALOG, STATE, GRID, CANVAS, POPOVER, TEST_MEDIA, DESKTOP_COLLISION */
 
 const DRAG = (() => {
   // ---- State ----
-  let _activeSource = null; // { type:'catalog'|'monitor'|'test-media', monitorId?, assetId?, setupIndex?, row?, col? }
+  let _activeSource = null; // { type:'catalog'|'equipment'|'monitor'|'desktop-monitor'|'test-media', monitorId?, equipmentId?, assetId?, setupIndex?, row?, col? }
   let _ghost = null;        // ghost div
   let _dropAreasPrefBeforeDrag = null;
 
@@ -24,6 +24,7 @@ const DRAG = (() => {
     // Deselect on canvas background click
     document.addEventListener('click', e => {
       if (!e.target.closest('[data-role="monitor"]') &&
+          !e.target.closest('[data-role="desktop-monitor"]') &&
           !e.target.closest('.popover') &&
           !e.target.closest('.label-tooltip') &&
           !e.target.closest('.screen-label')) {
@@ -41,11 +42,16 @@ const DRAG = (() => {
    * @param {HTMLElement} cardEl
    * @param {string} monitorId
    */
-  function attachCatalogDrag(cardEl, monitorId) {
+  function attachCatalogDrag(cardEl, monitorId, sourceCategory) {
+    const category = sourceCategory === 'equipment' ? 'equipment' : 'monitor';
     cardEl.setAttribute('draggable', 'true');
 
     cardEl.addEventListener('dragstart', e => {
-      _activeSource = { type: 'catalog', monitorId };
+      if (category === 'equipment') {
+        _activeSource = { type: 'equipment', equipmentId: monitorId };
+      } else {
+        _activeSource = { type: 'catalog', monitorId };
+      }
       e.dataTransfer.effectAllowed = 'copy';
       e.dataTransfer.setData('text/plain', monitorId);
       cardEl.classList.add('dragging');
@@ -137,14 +143,20 @@ const DRAG = (() => {
     const isEmpty = hit.role === 'empty-cell';
     const isMonitor = hit.role === 'monitor';
     const isPipZone = hit.role === 'pip-zone';
+    const isDesktop = hit.role === 'desktop' || hit.role === 'desktop-equipment' ||
+      hit.role === 'desktop-monitor' || hit.role === 'desktop-surface';
 
     if (isEmpty && _activeSource.type === 'catalog') {
       e.dataTransfer.dropEffect = 'copy';
       CANVAS.highlightCell(setupIndex, hit.row, hit.col, true);
+    } else if (isDesktop && _activeSource.type === 'catalog') {
+      e.dataTransfer.dropEffect = 'copy';
     } else if ((isMonitor || isPipZone) && _activeSource.type === 'monitor') {
       // can drop on occupied cell → swap
       e.dataTransfer.dropEffect = 'move';
     } else if ((isMonitor || isPipZone) && _activeSource.type === 'test-media') {
+      e.dataTransfer.dropEffect = 'copy';
+    } else if (isDesktop && _activeSource.type === 'equipment') {
       e.dataTransfer.dropEffect = 'copy';
     } else {
       e.dataTransfer.dropEffect = 'none';
@@ -165,6 +177,40 @@ const DRAG = (() => {
           _showGridFullToast();
         } else {
           CANVAS.openCellPopover(setupIndex, hit.row, hit.col);
+        }
+      } else if (hit.role === 'desktop' || hit.role === 'desktop-equipment' || hit.role === 'desktop-surface' || hit.role === 'desktop-monitor') {
+        const targetSetup = Number.isInteger(hit.setupIndex) ? hit.setupIndex : setupIndex;
+        const candidate = _pointerToDesktopMonitorCoords(
+          e.clientX,
+          e.clientY,
+          targetSetup,
+          _activeSource.monitorId,
+          'landscape'
+        );
+        if (!candidate) {
+          _showToast('Enable desktop view for this setup before placing monitor on desktop.');
+        } else {
+          const snapped = DESKTOP_COLLISION.findNearestFreeMonitorPosition(
+            targetSetup,
+            _activeSource.monitorId,
+            'landscape',
+            candidate.x_mm,
+            candidate.y_mm,
+            null
+          );
+          if (!snapped) {
+            _showToast('No free space available for this monitor on desktop.');
+          } else {
+            const monitor = CATALOG.find(m => m.id === _activeSource.monitorId && m.category !== 'equipment');
+            STATE.addDesktopMonitor(
+              targetSetup,
+              _activeSource.monitorId,
+              monitor ? monitor.resolutions[0] : null,
+              'landscape',
+              snapped.x_mm,
+              snapped.y_mm
+            );
+          }
         }
       }
     } else if (_activeSource && _activeSource.type === 'monitor') {
@@ -188,6 +234,41 @@ const DRAG = (() => {
       } else if (hit.role === 'monitor') {
         STATE.setMonitorTestMedia(setupIndex, hit.row, hit.col, _activeSource.assetId);
         CANVAS.openCellPopover(setupIndex, hit.row, hit.col);
+      }
+    } else if (_activeSource && _activeSource.type === 'equipment') {
+      const isDesktopHit = hit.role === 'desktop' ||
+        hit.role === 'desktop-equipment' ||
+        hit.role === 'desktop-surface' ||
+        hit.role === 'desktop-monitor';
+      if (!isDesktopHit) {
+        _activeSource = null;
+        _endDragDropAreaSession();
+        return;
+      }
+
+      const targetSetup = Number.isInteger(hit.setupIndex) ? hit.setupIndex : setupIndex;
+      const candidate = _pointerToDesktopCoords(
+        e.clientX,
+        e.clientY,
+        targetSetup,
+        _activeSource.equipmentId
+      );
+      if (!candidate) {
+        _showToast('Enable desktop view for this setup before placing equipment.');
+      } else {
+        const snapped = DESKTOP_COLLISION.findNearestFreePosition(
+          targetSetup,
+          _activeSource.equipmentId,
+          candidate.x_mm,
+          candidate.y_mm,
+          null
+        );
+
+        if (!snapped) {
+          _showToast('No free space available for this equipment.');
+        } else {
+          STATE.addDesktopEquipment(targetSetup, _activeSource.equipmentId, snapped.x_mm, snapped.y_mm);
+        }
       }
     }
 
@@ -272,7 +353,46 @@ const DRAG = (() => {
           // Find drop target
           const el = document.elementFromPoint(mu.clientX, mu.clientY);
           const hit = _findCellFromElement(el);
-          if (hit && !(hit.setupIndex === setupIndex && hit.row === row && hit.col === col)) {
+          const desktopHit = _findDesktopFromElement(el);
+          if (desktopHit) {
+            const sourceCell = STATE.getCell(setupIndex, row, col);
+            if (sourceCell) {
+              const targetSetup = Number.isInteger(desktopHit.setupIndex) ? desktopHit.setupIndex : setupIndex;
+              const candidate = _pointerToDesktopMonitorCoords(
+                mu.clientX,
+                mu.clientY,
+                targetSetup,
+                sourceCell.monitorId,
+                sourceCell.orientation
+              );
+              if (!candidate) {
+                _showToast('Enable desktop view for this setup before placing monitor on desktop.');
+              } else {
+                const snapped = DESKTOP_COLLISION.findNearestFreeMonitorPosition(
+                  targetSetup,
+                  sourceCell.monitorId,
+                  sourceCell.orientation,
+                  candidate.x_mm,
+                  candidate.y_mm,
+                  null
+                );
+
+                if (!snapped) {
+                  _showToast('No free space available for this monitor on desktop.');
+                } else {
+                  STATE.addDesktopMonitor(
+                    targetSetup,
+                    sourceCell.monitorId,
+                    sourceCell.selectedResolution,
+                    sourceCell.orientation,
+                    snapped.x_mm,
+                    snapped.y_mm
+                  );
+                  STATE.removeMonitor(setupIndex, row, col);
+                }
+              }
+            }
+          } else if (hit && !(hit.setupIndex === setupIndex && hit.row === row && hit.col === col)) {
             STATE.moveMonitor(setupIndex, row, col, hit.setupIndex, hit.row, hit.col);
           } else {
             STATE.setMonitorOffset(
@@ -312,6 +432,405 @@ const DRAG = (() => {
     return null;
   }
 
+  function _findDesktopFromElement(el) {
+    let node = el;
+    while (node) {
+      if (node.dataset && (node.dataset.role === 'desktop' || node.dataset.role === 'desktop-equipment' ||
+          node.dataset.role === 'desktop-surface' || node.dataset.role === 'desktop-monitor')) {
+        return {
+          setupIndex: parseInt(node.dataset.setup, 10)
+        };
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  function _captureDesktopPointerOffset(clientX, clientY, setupIndex, itemX_mm, itemY_mm) {
+    const desktopRect = CANVAS.getDesktopRect(setupIndex);
+    const svg = CANVAS.getSvg(setupIndex);
+    const metrics = CANVAS.getRenderMetrics(setupIndex);
+    if (!desktopRect || !svg || !metrics) return null;
+
+    const svgRect = svg.getBoundingClientRect();
+    const zoom = Math.max(metrics.zoom || 1, 0.0001);
+    const pxPerMm = GRID.mmToDisplay(1);
+    const localX = (clientX - svgRect.left) / zoom;
+    const localY = (clientY - svgRect.top) / zoom;
+
+    return {
+      x_mm: (localX - desktopRect.x) / pxPerMm - itemX_mm,
+      y_mm: (localY - desktopRect.y) / pxPerMm - itemY_mm
+    };
+  }
+
+  function _pointerToDesktopCoords(clientX, clientY, setupIndex, equipmentId, pointerOffset) {
+    const desktopRect = CANVAS.getDesktopRect(setupIndex);
+    if (!desktopRect) return null;
+
+    const svg = CANVAS.getSvg(setupIndex);
+    const metrics = CANVAS.getRenderMetrics(setupIndex);
+    const equipment = CATALOG.find(item => item.id === equipmentId && item.category === 'equipment');
+    if (!svg || !metrics || !equipment) return null;
+
+    const svgRect = svg.getBoundingClientRect();
+    const zoom = Math.max(metrics.zoom || 1, 0.0001);
+    const pxPerMm = GRID.mmToDisplay(1);
+
+    const localX = (clientX - svgRect.left) / zoom;
+    const localY = (clientY - svgRect.top) / zoom;
+
+    const offsetX = pointerOffset && Number.isFinite(pointerOffset.x_mm)
+      ? pointerOffset.x_mm
+      : equipment.physicalWidth_mm / 2;
+    const offsetY = pointerOffset && Number.isFinite(pointerOffset.y_mm)
+      ? pointerOffset.y_mm
+      : equipment.physicalHeight_mm / 2;
+
+    const x_mm = (localX - desktopRect.x) / pxPerMm - offsetX;
+    const y_mm = (localY - desktopRect.y) / pxPerMm - offsetY;
+    return { x_mm, y_mm };
+  }
+
+  function _pointerToDesktopMonitorCoords(clientX, clientY, setupIndex, monitorId, orientation, pointerOffset) {
+    const desktopRect = CANVAS.getDesktopRect(setupIndex);
+    if (!desktopRect) return null;
+
+    const svg = CANVAS.getSvg(setupIndex);
+    const metrics = CANVAS.getRenderMetrics(setupIndex);
+    const monitor = CATALOG.find(item => item.id === monitorId && item.category !== 'equipment');
+    if (!svg || !metrics || !monitor) return null;
+
+    const svgRect = svg.getBoundingClientRect();
+    const zoom = Math.max(metrics.zoom || 1, 0.0001);
+    const pxPerMm = GRID.mmToDisplay(1);
+    const localX = (clientX - svgRect.left) / zoom;
+    const localY = (clientY - svgRect.top) / zoom;
+
+    const isPortrait = orientation === 'portrait';
+    const widthMM = isPortrait ? monitor.physicalHeight_mm : monitor.physicalWidth_mm;
+    const heightMM = isPortrait ? monitor.physicalWidth_mm : monitor.physicalHeight_mm;
+    const offsetX = pointerOffset && Number.isFinite(pointerOffset.x_mm)
+      ? pointerOffset.x_mm
+      : widthMM / 2;
+    const offsetY = pointerOffset && Number.isFinite(pointerOffset.y_mm)
+      ? pointerOffset.y_mm
+      : heightMM / 2;
+
+    const x_mm = (localX - desktopRect.x) / pxPerMm - offsetX;
+    const y_mm = (localY - desktopRect.y) / pxPerMm - offsetY;
+    return { x_mm, y_mm };
+  }
+
+  function attachDesktopEquipmentDrag(groupEl, setupIndex, equipmentInstanceId) {
+    let _dragging = false;
+    let _startX = 0;
+    let _startY = 0;
+    let _previewDX = 0;
+    let _previewDY = 0;
+    let _pointerOffset = null;
+    const DRAG_THRESHOLD = 6;
+
+    const _clearPreview = () => {
+      _previewDX = 0;
+      _previewDY = 0;
+      groupEl.removeAttribute('transform');
+      groupEl.style.pointerEvents = '';
+    };
+
+    groupEl.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      _startX = e.clientX;
+      _startY = e.clientY;
+      _dragging = false;
+      _pointerOffset = null;
+
+      const sourceItem = STATE.getDesktopEquipment(setupIndex).find(item => item.id === equipmentInstanceId);
+      if (sourceItem) {
+        _pointerOffset = _captureDesktopPointerOffset(
+          e.clientX,
+          e.clientY,
+          setupIndex,
+          sourceItem.x_mm,
+          sourceItem.y_mm
+        );
+      }
+
+      const onMouseMove = mv => {
+        const dx = Math.abs(mv.clientX - _startX);
+        const dy = Math.abs(mv.clientY - _startY);
+
+        if (!_dragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
+          _dragging = true;
+          groupEl.classList.add('equipment-dragging');
+          groupEl.style.pointerEvents = 'none';
+          document.body.classList.add('is-dragging-monitor');
+          _createGhost(mv, setupIndex, null, null, equipmentInstanceId);
+          _makeSvgsDraggable(true);
+        }
+
+        if (_dragging && _ghost) {
+          _ghost.style.left = mv.clientX + 12 + 'px';
+          _ghost.style.top = mv.clientY + 12 + 'px';
+
+          const metrics = CANVAS.getRenderMetrics(setupIndex);
+          const zoom = metrics ? metrics.zoom : 1;
+          _previewDX = (mv.clientX - _startX) / Math.max(zoom, 0.0001);
+          _previewDY = (mv.clientY - _startY) / Math.max(zoom, 0.0001);
+          groupEl.setAttribute('transform', `translate(${_previewDX} ${_previewDY})`);
+        }
+      };
+
+      const onMouseUp = mu => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+
+        if (_dragging) {
+          groupEl.classList.remove('equipment-dragging');
+          document.body.classList.remove('is-dragging-monitor');
+          _makeSvgsDraggable(false);
+          _removeGhost();
+          _clearAllHighlights();
+          _clearPreview();
+
+          const sourceItem = STATE.getDesktopEquipment(setupIndex).find(item => item.id === equipmentInstanceId);
+          if (sourceItem) {
+            const equipmentId = sourceItem.equipmentId;
+            const hitEl = document.elementFromPoint(mu.clientX, mu.clientY);
+            const desktopHit = _findDesktopFromElement(hitEl) || { setupIndex };
+            const targetSetup = Number.isInteger(desktopHit.setupIndex) ? desktopHit.setupIndex : setupIndex;
+            const target = _pointerToDesktopCoords(mu.clientX, mu.clientY, targetSetup, equipmentId, _pointerOffset);
+
+            if (!target) {
+              _showToast('Enable desktop view for this setup before placing equipment.');
+            } else {
+              const exclusion = targetSetup === setupIndex ? equipmentInstanceId : null;
+              const snapped = DESKTOP_COLLISION.findNearestFreePosition(
+                targetSetup,
+                equipmentId,
+                target.x_mm,
+                target.y_mm,
+                exclusion
+              );
+
+              if (!snapped) {
+                _showToast('No free space available for this equipment.');
+              } else if (targetSetup === setupIndex) {
+                STATE.moveDesktopEquipment(setupIndex, equipmentInstanceId, snapped.x_mm, snapped.y_mm);
+              } else {
+                const removed = STATE.removeDesktopEquipment(setupIndex, equipmentInstanceId);
+                if (removed) {
+                  STATE.addDesktopEquipment(targetSetup, equipmentId, snapped.x_mm, snapped.y_mm);
+                }
+              }
+            }
+          }
+        } else {
+          // Click without dragging - open popover
+          document.body.classList.remove('is-dragging-monitor');
+          _clearPreview();
+          const sourceItem = STATE.getDesktopEquipment(setupIndex).find(item => item.id === equipmentInstanceId);
+          if (sourceItem && typeof POPOVER !== 'undefined' && POPOVER.openEquipmentPopover) {
+            POPOVER.openEquipmentPopover(setupIndex, equipmentInstanceId, mu.clientX, mu.clientY);
+          }
+        }
+        _dragging = false;
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
+  function attachDesktopMonitorDrag(groupEl, setupIndex, monitorInstanceId) {
+    let _dragging = false;
+    let _startX = 0;
+    let _startY = 0;
+    let _previewDX = 0;
+    let _previewDY = 0;
+    let _pointerOffset = null;
+    const DRAG_THRESHOLD = 6;
+
+    const _clearPreview = () => {
+      _previewDX = 0;
+      _previewDY = 0;
+      groupEl.removeAttribute('transform');
+      groupEl.style.pointerEvents = '';
+    };
+
+    groupEl.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      _startX = e.clientX;
+      _startY = e.clientY;
+      _dragging = false;
+      _pointerOffset = null;
+
+      const sourceItem = STATE.getDesktopMonitors(setupIndex).find(item => item.id === monitorInstanceId);
+      if (sourceItem) {
+        _pointerOffset = _captureDesktopPointerOffset(
+          e.clientX,
+          e.clientY,
+          setupIndex,
+          sourceItem.x_mm,
+          sourceItem.y_mm
+        );
+      }
+
+      const onMouseMove = mv => {
+        const dx = Math.abs(mv.clientX - _startX);
+        const dy = Math.abs(mv.clientY - _startY);
+
+        if (!_dragging && (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD)) {
+          _dragging = true;
+          groupEl.classList.add('monitor-dragging');
+          groupEl.style.pointerEvents = 'none';
+          document.body.classList.add('is-dragging-monitor');
+          _createGhost(mv, setupIndex, null, null, null, monitorInstanceId);
+          _makeSvgsDraggable(true);
+        }
+
+        if (_dragging && _ghost) {
+          _ghost.style.left = mv.clientX + 12 + 'px';
+          _ghost.style.top = mv.clientY + 12 + 'px';
+
+          const metrics = CANVAS.getRenderMetrics(setupIndex);
+          const zoom = metrics ? metrics.zoom : 1;
+          _previewDX = (mv.clientX - _startX) / Math.max(zoom, 0.0001);
+          _previewDY = (mv.clientY - _startY) / Math.max(zoom, 0.0001);
+          groupEl.setAttribute('transform', `translate(${_previewDX} ${_previewDY})`);
+        }
+      };
+
+      const onMouseUp = mu => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+
+        if (_dragging) {
+          groupEl.classList.remove('monitor-dragging');
+          document.body.classList.remove('is-dragging-monitor');
+          _makeSvgsDraggable(false);
+          _removeGhost();
+          _clearAllHighlights();
+          _clearPreview();
+
+          const sourceItem = STATE.getDesktopMonitors(setupIndex).find(item => item.id === monitorInstanceId);
+          if (sourceItem) {
+            const hitEl = document.elementFromPoint(mu.clientX, mu.clientY);
+            const hitCell = _findCellFromElement(hitEl);
+
+            if (hitCell && hitCell.role === 'empty-cell') {
+              const placed = STATE.placeMonitor(
+                hitCell.setupIndex,
+                hitCell.row,
+                hitCell.col,
+                sourceItem.monitorId
+              );
+
+              if (!placed) {
+                _showToast('Drop on a free cell to move this desktop monitor back into the grid.');
+              } else {
+                STATE.setResolution(hitCell.setupIndex, hitCell.row, hitCell.col, sourceItem.selectedResolution);
+                STATE.setOrientation(hitCell.setupIndex, hitCell.row, hitCell.col, sourceItem.orientation);
+                STATE.removeDesktopMonitor(setupIndex, monitorInstanceId);
+                CANVAS.openCellPopover(hitCell.setupIndex, hitCell.row, hitCell.col);
+              }
+              _dragging = false;
+              return;
+            }
+
+            const desktopHit = _findDesktopFromElement(hitEl) || { setupIndex };
+            const targetSetup = Number.isInteger(desktopHit.setupIndex) ? desktopHit.setupIndex : setupIndex;
+            const target = _pointerToDesktopMonitorCoords(
+              mu.clientX,
+              mu.clientY,
+              targetSetup,
+              sourceItem.monitorId,
+              sourceItem.orientation,
+              _pointerOffset
+            );
+
+            if (!target) {
+              _showToast('Enable desktop view for this setup before placing monitor on desktop.');
+            } else {
+              const exclusion = targetSetup === setupIndex ? monitorInstanceId : null;
+              const snapped = DESKTOP_COLLISION.findNearestFreeMonitorPosition(
+                targetSetup,
+                sourceItem.monitorId,
+                sourceItem.orientation,
+                target.x_mm,
+                target.y_mm,
+                exclusion
+              );
+
+              if (!snapped) {
+                _showToast('No free space available for this monitor on desktop.');
+              } else if (targetSetup === setupIndex) {
+                STATE.moveDesktopMonitor(setupIndex, monitorInstanceId, snapped.x_mm, snapped.y_mm);
+              } else {
+                const removed = STATE.removeDesktopMonitor(setupIndex, monitorInstanceId);
+                if (removed) {
+                  STATE.addDesktopMonitor(
+                    targetSetup,
+                    sourceItem.monitorId,
+                    sourceItem.selectedResolution,
+                    sourceItem.orientation,
+                    snapped.x_mm,
+                    snapped.y_mm
+                  );
+                }
+              }
+            }
+          }
+        } else {
+          document.body.classList.remove('is-dragging-monitor');
+          _clearPreview();
+        }
+        _dragging = false;
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
+  function attachDesktopSurfaceDrag(surfaceEl, setupIndex) {
+    let dragging = false;
+    let startX = 0;
+    let startOffsetMM = 0;
+
+    surfaceEl.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragging = false;
+      startX = e.clientX;
+      const desktop = STATE.getDesktopConfig(setupIndex);
+      startOffsetMM = desktop && Number.isFinite(desktop.x_offset_mm) ? desktop.x_offset_mm : 0;
+
+      const onMouseMove = mv => {
+        const dx = mv.clientX - startX;
+        if (!dragging && Math.abs(dx) > 4) dragging = true;
+        if (!dragging) return;
+
+        const metrics = CANVAS.getRenderMetrics(setupIndex);
+        const zoom = metrics ? Math.max(metrics.zoom, 0.0001) : 1;
+        const displayDx = dx / zoom;
+        const mmDx = displayDx / Math.max(GRID.mmToDisplay(1), 0.0001);
+        STATE.setDesktopConfig(setupIndex, { x_offset_mm: Math.round(startOffsetMM + mmDx) });
+      };
+
+      const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        dragging = false;
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+  }
+
   function _makeSvgsDraggable(on) {
     for (let si = 0; si <= 1; si++) {
       const svg = CANVAS.getSvg(si);
@@ -321,9 +840,23 @@ const DRAG = (() => {
 
   /* ---- Ghost element ---- */
 
-  function _createGhost(e, setupIndex, row, col) {
-    const cell = STATE.getCell(setupIndex, row, col);
+  function _createGhost(e, setupIndex, row, col, equipmentInstanceId, desktopMonitorInstanceId) {
+    const cell = (Number.isInteger(row) && Number.isInteger(col))
+      ? STATE.getCell(setupIndex, row, col)
+      : null;
     const mon = cell ? CATALOG.find(m => m.id === cell.monitorId) : null;
+    const equipmentItem = equipmentInstanceId
+      ? STATE.getDesktopEquipment(setupIndex).find(item => item.id === equipmentInstanceId)
+      : null;
+    const equipmentSpec = equipmentItem
+      ? CATALOG.find(item => item.id === equipmentItem.equipmentId && item.category === 'equipment')
+      : null;
+    const desktopMonItem = desktopMonitorInstanceId
+      ? STATE.getDesktopMonitors(setupIndex).find(item => item.id === desktopMonitorInstanceId)
+      : null;
+    const desktopMonSpec = desktopMonItem
+      ? CATALOG.find(item => item.id === desktopMonItem.monitorId && item.category !== 'equipment')
+      : null;
     _ghost = document.createElement('div');
     _ghost.className = 'catalog-card';
     _ghost.style.cssText = `
@@ -335,7 +868,9 @@ const DRAG = (() => {
       top:  ${e.clientY + 12}px;
       transition: none;
     `;
-    _ghost.textContent = mon ? `${mon.size}" ${mon.brand}` : 'Monitor';
+    _ghost.textContent = mon
+      ? `${mon.size}" ${mon.brand}`
+      : (desktopMonSpec ? `${desktopMonSpec.size}" ${desktopMonSpec.brand}` : (equipmentSpec ? equipmentSpec.modelName : 'Monitor'));
     document.body.appendChild(_ghost);
   }
 
@@ -398,5 +933,14 @@ const DRAG = (() => {
     }
   }
 
-  return { init, attachCatalogDrag, attachTestMediaDrag, attachSvgDropTargets, attachMonitorDrag };
+  return {
+    init,
+    attachCatalogDrag,
+    attachTestMediaDrag,
+    attachSvgDropTargets,
+    attachMonitorDrag,
+    attachDesktopEquipmentDrag,
+    attachDesktopMonitorDrag,
+    attachDesktopSurfaceDrag
+  };
 })();

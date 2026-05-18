@@ -59,6 +59,13 @@
         <!-- Populated by ui.js -->
       </div>
 
+      <div class="sidebar-section">
+        <h3>Desktop Equipment</h3>
+      </div>
+      <div class="catalog-list" id="equipmentList" role="list" aria-label="Drag desktop equipment to a desktop surface">
+        <!-- Populated by ui.js -->
+      </div>
+
       <div class="sidebar-section sidebar-hint">
         <p>Drag a monitor onto an empty cell in a setup to place it.</p>
       </div>
@@ -94,6 +101,18 @@
             <span class="info-sep">|</span>
             <span class="info-item" id="heightA">Height: —</span>
           </div>
+          <div class="setup-desktop-controls" aria-label="Setup A desktop controls">
+            <label class="desktop-toggle-label" for="desktopEnabledA">
+              <input type="checkbox" id="desktopEnabledA" />
+              Desktop
+            </label>
+            <label class="desktop-size-label" for="desktopWidthA">W</label>
+            <input class="desktop-size-input" id="desktopWidthA" type="number" min="200" max="4000" step="10" value="1400" />
+            <label class="desktop-size-label" for="desktopHeightA">H</label>
+            <input class="desktop-size-input" id="desktopHeightA" type="number" min="200" max="4000" step="10" value="700" />
+            <label class="desktop-size-label" for="desktopReservedDepthA">Reserved Depth</label>
+            <input class="desktop-size-input" id="desktopReservedDepthA" type="number" min="50" max="1000" step="10" value="300" />
+          </div>
           <div class="setup-controls" aria-label="Setup A zoom controls">
             <button class="btn-zoom" id="zoomOutA" title="Zoom out Setup A">-</button>
             <span class="zoom-value" id="zoomValueA">100%</span>
@@ -121,6 +140,16 @@
             <span class="info-item" id="widthB">Width: —</span>
             <span class="info-sep">|</span>
             <span class="info-item" id="heightB">Height: —</span>
+          </div>
+          <div class="setup-desktop-controls" aria-label="Setup B desktop controls">
+            <label class="desktop-toggle-label" for="desktopEnabledB">
+              <input type="checkbox" id="desktopEnabledB" />
+              Desktop
+            </label>
+            <label class="desktop-size-label" for="desktopWidthB">W</label>
+            <input class="desktop-size-input" id="desktopWidthB" type="number" min="200" max="4000" step="10" value="1400" />
+            <label class="desktop-size-label" for="desktopHeightB">H</label>
+            <input class="desktop-size-input" id="desktopHeightB" type="number" min="200" max="4000" step="10" value="700" />
           </div>
           <div class="setup-controls" aria-label="Setup B zoom controls">
             <button class="btn-zoom" id="zoomOutB" title="Zoom out Setup B">-</button>
@@ -282,6 +311,7 @@
   <script src="js/catalog.js"></script>
   <script src="js/state.js"></script>
   <script src="js/grid.js"></script>
+  <script src="js/desktop-collision.js"></script>
   <script src="js/canvas.js"></script>
   <script src="js/drag.js"></script>
   <script src="js/labels.js"></script>

@@ -83,13 +83,18 @@ const CANVAS = (() => {
 
   function _displayResolution(cell) {
     if (!cell || !cell.selectedResolution) return '';
+    const monitor = CATALOG.find(m => m.id === cell.monitorId);
     const width = cell.orientation === 'portrait'
       ? cell.selectedResolution.height
       : cell.selectedResolution.width;
     const height = cell.orientation === 'portrait'
       ? cell.selectedResolution.width
       : cell.selectedResolution.height;
-    return `${width}×${height}${_resolutionTierTag(width, height)}`;
+    let aspect = '';
+    if (monitor && monitor.aspectRatio) {
+      aspect = `, ${monitor.aspectRatio}`;
+    }
+    return `${width}×${height}${_resolutionTierTag(width, height)}${aspect}`;
   }
 
   function _monitorRectFromCellRect(rect, cell, monitor) {
@@ -118,6 +123,11 @@ const CANVAS = (() => {
     return _monitorRectFromCellRect(rect, cell, monitor);
   }
 
+  function getDesktopRect(setupIndex) {
+    const { colWidths, rowHeights } = GRID.calcDimensions(setupIndex);
+    return GRID.desktopRect(setupIndex, colWidths, rowHeights);
+  }
+
   /* ---- Main render ---- */
 
   function render(setupIndex) {
@@ -130,7 +140,7 @@ const CANVAS = (() => {
 
     const { colWidths, rowHeights, colWidths_mm, rowHeights_mm } =
       GRID.calcDimensions(setupIndex);
-    const { width, height } = GRID.svgSize(colWidths, rowHeights);
+    const { width, height } = GRID.svgSize(colWidths, rowHeights, setupIndex);
 
     const fit = _fitToWrapper(wrapper, width, height);
     const effectiveZoom = fit.zoom * manualZoom[setupIndex];
@@ -153,6 +163,9 @@ const CANVAS = (() => {
     svg.style.marginLeft = '0px';
     svg.style.marginTop = '0px';
 
+    // Draw desktop background first so monitors are never hidden behind it.
+    _drawDesktopBackground(svg, setupIndex, colWidths, rowHeights);
+
     // Draw cells
     for (let r = 0; r < GRID.MAX_ROWS; r++) {
       for (let c = 0; c < GRID.MAX_COLS; c++) {
@@ -168,6 +181,216 @@ const CANVAS = (() => {
 
     // Draw dimension annotations
     _drawAnnotations(svg, colWidths, rowHeights, colWidths_mm, rowHeights_mm);
+
+    _drawDesktopOverlay(svg, setupIndex, colWidths, rowHeights);
+  }
+
+  function _drawDesktopBackground(svg, setupIndex, colWidths, rowHeights) {
+    const desktopRect = GRID.desktopRect(setupIndex, colWidths, rowHeights);
+    if (!desktopRect) return;
+
+    const setup = STATE.getSetup(setupIndex);
+    const desktopGroup = el('g', {
+      'data-setup': setupIndex,
+      'data-role': 'desktop'
+    });
+
+    const surface = el('rect', {
+      x: desktopRect.x,
+      y: desktopRect.y,
+      width: desktopRect.w,
+      height: desktopRect.h,
+      rx: 10,
+      'data-setup': setupIndex,
+      'data-role': 'desktop-surface'
+    }, 'desktop-surface');
+    if (DRAG.attachDesktopSurfaceDrag) {
+      DRAG.attachDesktopSurfaceDrag(surface, setupIndex);
+    }
+    desktopGroup.appendChild(surface);
+
+    const reservedDepthPx = Math.min(
+      GRID.mmToDisplay(setup.desktopConfig.reservedDepth_mm),
+      Math.max(desktopRect.h - 12, 0)
+    );
+    if (reservedDepthPx > 8) {
+      const reservedZone = el('rect', {
+        x: desktopRect.x + 6,
+        y: desktopRect.y + 6,
+        width: Math.max(desktopRect.w - 12, 10),
+        height: reservedDepthPx,
+        rx: 6
+      }, 'desktop-stands-reserved-zone');
+      desktopGroup.appendChild(reservedZone);
+
+      const reservedLabel = text(
+        `Reserved for screen stands (~${setup.desktopConfig.reservedDepth_mm} mm)`,
+        desktopRect.x + desktopRect.w / 2,
+        desktopRect.y + 24,
+        'desktop-stands-reserved-label',
+        { 'text-anchor': 'middle' }
+      );
+      desktopGroup.appendChild(reservedLabel);
+    }
+
+    const title = text('Desktop Surface', desktopRect.x + 10, desktopRect.y + 18, 'desktop-label', {
+      'text-anchor': 'start'
+    });
+    desktopGroup.appendChild(title);
+
+    const sizeText = text(
+      `${setup.desktopConfig.width_mm}×${setup.desktopConfig.height_mm} mm`,
+      desktopRect.x + desktopRect.w - 10,
+      desktopRect.y + 18,
+      'desktop-label',
+      { 'text-anchor': 'end' }
+    );
+    desktopGroup.appendChild(sizeText);
+
+    svg.appendChild(desktopGroup);
+  }
+
+  function _drawDesktopOverlay(svg, setupIndex, colWidths, rowHeights) {
+    const desktopRect = GRID.desktopRect(setupIndex, colWidths, rowHeights);
+    if (!desktopRect) return;
+
+    const overlay = el('g', {
+      'data-setup': setupIndex,
+      'data-role': 'desktop-overlay'
+    });
+
+    const equipment = STATE.getDesktopEquipment(setupIndex);
+    equipment.forEach(item => _drawDesktopEquipment(overlay, setupIndex, desktopRect, item));
+
+    const desktopMonitors = STATE.getDesktopMonitors(setupIndex);
+    desktopMonitors.forEach(item => _drawDesktopMonitor(overlay, setupIndex, desktopRect, item));
+
+    svg.appendChild(overlay);
+  }
+
+  function _drawDesktopEquipment(parentGroup, setupIndex, desktopRect, item) {
+    const equipment = CATALOG.find(entry => entry.id === item.equipmentId && entry.category === 'equipment');
+    if (!equipment) return;
+
+    const x = desktopRect.x + GRID.mmToDisplay(item.x_mm);
+    const y = desktopRect.y + GRID.mmToDisplay(item.y_mm);
+    const w = GRID.mmToDisplay(equipment.physicalWidth_mm);
+    const h = GRID.mmToDisplay(equipment.physicalHeight_mm);
+
+    const g = el('g', {
+      'data-setup': setupIndex,
+      'data-role': 'desktop-equipment',
+      'data-equipment-instance-id': item.id,
+      'data-equipment-id': item.equipmentId
+    });
+    g.style.cursor = 'grab';
+
+    const body = el('rect', {
+      x,
+      y,
+      width: w,
+      height: h,
+      rx: equipment.type === 'mouse' ? Math.max(8, Math.round(Math.min(w, h) * 0.3)) : 6
+    }, 'desktop-equipment-body');
+    g.appendChild(body);
+
+    // Render custom label if present, otherwise show model name
+    if (item.label && item.label.trim()) {
+      // Show custom label as primary
+      const customLabel = text(item.label, x + w / 2, y + h / 2 - 2, 'desktop-equipment-label-custom', {
+        'text-anchor': 'middle',
+        'font-weight': 'bold'
+      });
+      g.appendChild(customLabel);
+
+      // Show model name as secondary, smaller
+      const modelLabel = text(equipment.modelName, x + w / 2, y + h / 2 + 10, 'desktop-equipment-label-model', {
+        'text-anchor': 'middle',
+        'font-size': '0.8em',
+        'opacity': '0.7'
+      });
+      g.appendChild(modelLabel);
+    } else {
+      // Show only model name if no custom label
+      const label = text(equipment.modelName, x + w / 2, y + h / 2 + 4, 'desktop-equipment-label', {
+        'text-anchor': 'middle'
+      });
+      g.appendChild(label);
+    }
+
+    if (DRAG.attachDesktopEquipmentDrag) {
+      DRAG.attachDesktopEquipmentDrag(g, setupIndex, item.id);
+    }
+    parentGroup.appendChild(g);
+  }
+
+  function _drawDesktopMonitor(parentGroup, setupIndex, desktopRect, item) {
+    const monitor = CATALOG.find(entry => entry.id === item.monitorId && entry.category !== 'equipment');
+    if (!monitor) return;
+
+    const isPortrait = item.orientation === 'portrait';
+    const x = desktopRect.x + GRID.mmToDisplay(item.x_mm);
+    const y = desktopRect.y + GRID.mmToDisplay(item.y_mm);
+    const w = GRID.mmToDisplay(isPortrait ? monitor.physicalHeight_mm : monitor.physicalWidth_mm);
+    const h = GRID.mmToDisplay(isPortrait ? monitor.physicalWidth_mm : monitor.physicalHeight_mm);
+
+    const g = el('g', {
+      'data-setup': setupIndex,
+      'data-role': 'desktop-monitor',
+      'data-desktop-monitor-instance-id': item.id,
+      'data-monitor-id': item.monitorId
+    });
+    g.style.cursor = 'grab';
+
+    const BEZEL = 6;
+    const body = el('rect', {
+      x,
+      y,
+      width: w,
+      height: h,
+      rx: 4
+    }, 'monitor-body desktop-monitor-body');
+    g.appendChild(body);
+
+    const screen = el('rect', {
+      x: x + BEZEL,
+      y: y + BEZEL,
+      width: Math.max(w - BEZEL * 2, 10),
+      height: Math.max(h - BEZEL * 2 - 10, 10),
+      rx: 2
+    }, 'monitor-screen');
+    g.appendChild(screen);
+
+    const sizeLabel = text(`${monitor.size}"`, x + w / 2, y + h / 2 - 14, 'monitor-label-size', {
+      'text-anchor': 'middle'
+    });
+    g.appendChild(sizeLabel);
+
+    const resText = item.selectedResolution
+      ? `${isPortrait ? item.selectedResolution.height : item.selectedResolution.width}×${isPortrait ? item.selectedResolution.width : item.selectedResolution.height}${monitor.aspectRatio ? `, ${monitor.aspectRatio}` : ''}`
+      : '';
+    const resLabel = text(resText, x + w / 2, y + h / 2 + 14, 'monitor-label-res', {
+      'text-anchor': 'middle'
+    });
+    g.appendChild(resLabel);
+
+    const brandLabel = text(monitor.brand, x + w / 2, y + h / 2 + 30, 'monitor-label-brand', {
+      'text-anchor': 'middle'
+    });
+    g.appendChild(brandLabel);
+
+    g.addEventListener('click', e => {
+      e.stopPropagation();
+      if (typeof POPOVER !== 'undefined' && POPOVER.showDesktopMonitor) {
+        POPOVER.showDesktopMonitor(setupIndex, item.id, g.getBoundingClientRect());
+      }
+    });
+
+    if (DRAG.attachDesktopMonitorDrag) {
+      DRAG.attachDesktopMonitorDrag(g, setupIndex, item.id);
+    }
+
+    parentGroup.appendChild(g);
   }
 
   function _fitToWrapper(wrapper, intrinsicWidth, intrinsicHeight) {
@@ -278,9 +501,9 @@ const CANVAS = (() => {
       : (pipScreenTop + 4);
 
     const infoX = hasPip ? (infoBgX + 6) : cx;
-    const sizeY = hasPip ? (infoBgY + 11) : (cy - 8);
-    const resY = hasPip ? (sizeY + 12) : (cy + 8);
-    const brandY = hasPip ? (resY + 11) : (cy + 21);
+    const sizeY = hasPip ? (infoBgY + 10) : (cy - 12);
+    const resY = hasPip ? (sizeY + 18) : (cy + 12);
+    const brandY = hasPip ? (resY + 15) : (cy + 28);
     const anchor = hasPip ? 'start' : 'middle';
 
     if (hasPip) {
@@ -370,7 +593,7 @@ const CANVAS = (() => {
         const res = cell.selectedResolution || { width: 1920, height: 1080 };
         const isPortrait = cell.orientation === 'portrait';
         const resW = isPortrait ? res.height : res.width;
-        const resH = isPortrait ? res.width : res.height;
+        const resH = isPortrait ? res.width  : res.height;
 
         // Fraction of the monitor's pixel grid that the test image covers.
         // Fall back to filling the screen when dimensions are not stored (legacy assets).
@@ -656,6 +879,7 @@ const CANVAS = (() => {
     getRenderMetrics,
     getManualZoom,
     getMonitorRect,
+    getDesktopRect,
     openCellPopover,
     zoomIn,
     zoomOut,
