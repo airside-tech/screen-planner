@@ -125,7 +125,8 @@ const DRAG = (() => {
           row: parseInt(node.dataset.row, 10),
           col: parseInt(node.dataset.col, 10),
           setupIndex: parseInt(node.dataset.setup, 10),
-          zoneId: node.dataset.zoneId || null
+          zoneId: node.dataset.zoneId || null,
+          desktopMonitorInstanceId: node.dataset.desktopMonitorInstanceId || null
         };
       }
       node = node.parentElement;
@@ -144,7 +145,8 @@ const DRAG = (() => {
     const isMonitor = hit.role === 'monitor';
     const isPipZone = hit.role === 'pip-zone';
     const isDesktop = hit.role === 'desktop' || hit.role === 'desktop-equipment' ||
-      hit.role === 'desktop-monitor' || hit.role === 'desktop-surface';
+      hit.role === 'desktop-surface';
+    const isDesktopMonitor = hit.role === 'desktop-monitor';
 
     if (isEmpty && _activeSource.type === 'catalog') {
       e.dataTransfer.dropEffect = 'copy';
@@ -155,6 +157,8 @@ const DRAG = (() => {
       // can drop on occupied cell → swap
       e.dataTransfer.dropEffect = 'move';
     } else if ((isMonitor || isPipZone) && _activeSource.type === 'test-media') {
+      e.dataTransfer.dropEffect = 'copy';
+    } else if (isDesktopMonitor && _activeSource.type === 'test-media') {
       e.dataTransfer.dropEffect = 'copy';
     } else if (isDesktop && _activeSource.type === 'equipment') {
       e.dataTransfer.dropEffect = 'copy';
@@ -228,11 +232,36 @@ const DRAG = (() => {
         _showToast('Test media feature is disabled.');
       } else if (hit.role === 'empty-cell') {
         _showToast('Place a monitor first before dropping test media.');
+      } else if (hit.role === 'desktop-monitor' && hit.desktopMonitorInstanceId) {
+        if (STATE.setDesktopMonitorTestMedia) {
+          STATE.setDesktopMonitorTestMedia(setupIndex, hit.desktopMonitorInstanceId, _activeSource.assetId);
+          if (typeof POPOVER !== 'undefined' && POPOVER.showDesktopMonitor) {
+            const target = e.target && e.target.closest
+              ? e.target.closest('[data-role="desktop-monitor"]')
+              : null;
+            if (target) {
+              POPOVER.showDesktopMonitor(setupIndex, hit.desktopMonitorInstanceId, target.getBoundingClientRect());
+            }
+          }
+        }
       } else if (hit.role === 'pip-zone' && hit.zoneId) {
         STATE.setZoneTestMedia(setupIndex, hit.row, hit.col, hit.zoneId, _activeSource.assetId);
         CANVAS.openCellPopover(setupIndex, hit.row, hit.col, hit.zoneId);
       } else if (hit.role === 'monitor') {
-        STATE.setMonitorTestMedia(setupIndex, hit.row, hit.col, _activeSource.assetId);
+        const cell = STATE.getCell(setupIndex, hit.row, hit.col);
+        if (cell && cell.windowedAppsEnabled && STATE.addWindowedApp) {
+          const res = cell.selectedResolution || { width: 1920, height: 1080 };
+          const isPortrait = cell.orientation === 'portrait';
+          const resW = Math.max(1, isPortrait ? res.height : res.width);
+          const resH = Math.max(1, isPortrait ? res.width : res.height);
+          const appW = Math.round(resW * 0.5);
+          const appH = Math.round(resH * 0.5);
+          const appX = Math.round((resW - appW) / 2);
+          const appY = Math.round((resH - appH) / 2);
+          STATE.addWindowedApp(setupIndex, hit.row, hit.col, _activeSource.assetId, appX, appY, appW, appH);
+        } else {
+          STATE.setMonitorTestMedia(setupIndex, hit.row, hit.col, _activeSource.assetId);
+        }
         CANVAS.openCellPopover(setupIndex, hit.row, hit.col);
       }
     } else if (_activeSource && _activeSource.type === 'equipment') {
@@ -298,6 +327,11 @@ const DRAG = (() => {
 
     groupEl.addEventListener('mousedown', e => {
       if (e.button !== 0) return;
+      const roleEl = e.target && e.target.closest ? e.target.closest('[data-role]') : null;
+      if (roleEl) {
+        const role = roleEl.dataset.role || '';
+        if (role.indexOf('windowed-app') === 0) return;
+      }
       e.preventDefault();
       _startX = e.clientX;
       _startY = e.clientY;
@@ -413,6 +447,162 @@ const DRAG = (() => {
 
       document.addEventListener('mousemove', onMouseMove);
       document.addEventListener('mouseup',   onMouseUp);
+    });
+  }
+
+  function attachWindowedAppInteraction(groupEl, setupIndex, row, col) {
+    groupEl.addEventListener('click', ev => {
+      const roleEl = ev.target.closest('[data-role]');
+      if (!roleEl) return;
+      const role = roleEl.dataset.role || '';
+      if (role.indexOf('windowed-app') === 0) {
+        ev.stopPropagation();
+        ev.preventDefault();
+      }
+    }, true);
+
+    groupEl.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+
+      const roleEl = e.target.closest('[data-role]');
+      if (!roleEl) return;
+      const role = roleEl.dataset.role || '';
+      if (role !== 'windowed-app' && role !== 'windowed-app-resize' && role !== 'windowed-app-close') return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      const appId = roleEl.dataset.appId;
+      if (!appId) return;
+
+      if (role === 'windowed-app-close') {
+        if (STATE.removeWindowedApp) {
+          STATE.removeWindowedApp(setupIndex, row, col, appId);
+        }
+        return;
+      }
+
+      const cell = STATE.getCell(setupIndex, row, col);
+      const screenRect = CANVAS.getScreenRect ? CANVAS.getScreenRect(setupIndex, row, col) : null;
+      if (!cell || !screenRect || !Array.isArray(cell.windowedApps)) return;
+
+      const app = cell.windowedApps.find(entry => entry.id === appId);
+      if (!app) return;
+
+      const res = cell.selectedResolution || { width: 1920, height: 1080 };
+      const isPortrait = cell.orientation === 'portrait';
+      const resW = Math.max(1, isPortrait ? res.height : res.width);
+      const resH = Math.max(1, isPortrait ? res.width : res.height);
+      const scaleX = screenRect.w / resW;
+      const scaleY = screenRect.h / resH;
+      const minW = Math.min(80, resW);
+      const minH = Math.min(80, resH);
+
+      const mode = role === 'windowed-app-resize' ? 'resize' : 'move';
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      const startRect = { x: app.x, y: app.y, w: app.w, h: app.h };
+
+      const applyPreview = (nextRect) => {
+        const imageEl = groupEl.querySelector(`image[data-role="windowed-app"][data-app-id="${appId}"]`);
+        const borderEl = groupEl.querySelector(`rect.windowed-app-border[data-app-id="${appId}"]`);
+        const resizeEl = groupEl.querySelector(`rect[data-role="windowed-app-resize"][data-app-id="${appId}"]`);
+        const closeRectEl = groupEl.querySelector(`rect[data-role="windowed-app-close"][data-app-id="${appId}"]`);
+        const closeTextEl = groupEl.querySelector(`text[data-role="windowed-app-close"][data-app-id="${appId}"]`);
+
+        const svgX = screenRect.x + nextRect.x * scaleX;
+        const svgY = screenRect.y + nextRect.y * scaleY;
+        const svgW = Math.max(6, nextRect.w * scaleX);
+        const svgH = Math.max(6, nextRect.h * scaleY);
+
+        if (imageEl) {
+          imageEl.setAttribute('x', String(svgX));
+          imageEl.setAttribute('y', String(svgY));
+          imageEl.setAttribute('width', String(svgW));
+          imageEl.setAttribute('height', String(svgH));
+        }
+        if (borderEl) {
+          borderEl.setAttribute('x', String(svgX));
+          borderEl.setAttribute('y', String(svgY));
+          borderEl.setAttribute('width', String(svgW));
+          borderEl.setAttribute('height', String(svgH));
+        }
+        if (resizeEl) {
+          resizeEl.setAttribute('x', String(svgX + svgW - 8));
+          resizeEl.setAttribute('y', String(svgY + svgH - 8));
+        }
+        if (closeRectEl) {
+          closeRectEl.setAttribute('x', String(svgX + svgW - 15));
+          closeRectEl.setAttribute('y', String(svgY + 1));
+        }
+        if (closeTextEl) {
+          closeTextEl.setAttribute('x', String(svgX + svgW - 8));
+          closeTextEl.setAttribute('y', String(svgY + 9));
+        }
+      };
+
+      const clampRect = (nextRect) => {
+        const out = {
+          x: Math.round(nextRect.x),
+          y: Math.round(nextRect.y),
+          w: Math.round(nextRect.w),
+          h: Math.round(nextRect.h)
+        };
+
+        out.w = Math.max(minW, Math.min(resW, out.w));
+        out.h = Math.max(minH, Math.min(resH, out.h));
+        out.x = Math.max(0, Math.min(resW - out.w, out.x));
+        out.y = Math.max(0, Math.min(resH - out.h, out.y));
+        return out;
+      };
+
+      let finalRect = { ...startRect };
+
+      const onMouseMove = mv => {
+        mv.preventDefault();
+        mv.stopPropagation();
+
+        const dxRes = (mv.clientX - startClientX) / Math.max(scaleX, 0.0001);
+        const dyRes = (mv.clientY - startClientY) / Math.max(scaleY, 0.0001);
+
+        let nextRect;
+        if (mode === 'resize') {
+          nextRect = clampRect({
+            x: startRect.x,
+            y: startRect.y,
+            w: startRect.w + dxRes,
+            h: startRect.h + dyRes
+          });
+        } else {
+          nextRect = clampRect({
+            x: startRect.x + dxRes,
+            y: startRect.y + dyRes,
+            w: startRect.w,
+            h: startRect.h
+          });
+        }
+
+        finalRect = nextRect;
+        applyPreview(nextRect);
+      };
+
+      const onMouseUp = mu => {
+        mu.preventDefault();
+        mu.stopPropagation();
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+
+        if (mode === 'resize') {
+          if (STATE.resizeWindowedApp) {
+            STATE.resizeWindowedApp(setupIndex, row, col, appId, finalRect.w, finalRect.h);
+          }
+        } else if (STATE.moveWindowedApp) {
+          STATE.moveWindowedApp(setupIndex, row, col, appId, finalRect.x, finalRect.y);
+        }
+      };
+
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
     });
   }
 
@@ -939,6 +1129,7 @@ const DRAG = (() => {
     attachTestMediaDrag,
     attachSvgDropTargets,
     attachMonitorDrag,
+    attachWindowedAppInteraction,
     attachDesktopEquipmentDrag,
     attachDesktopMonitorDrag,
     attachDesktopSurfaceDrag

@@ -81,7 +81,7 @@
 /* Monitor label text (size + resolution) */
 .monitor-label-size {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 16px;
+  font-size: max(var(--font-min-readable), calc(20px * var(--font-scale)));
   font-weight: 700;
   fill: var(--color-accent, #4a9eff);
   dominant-baseline: auto;
@@ -91,7 +91,7 @@
 
 .monitor-label-res {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 19px;
+  font-size: max(var(--font-min-readable), calc(19px * var(--font-scale)));
   font-weight: 600;
   fill: var(--color-text-dim, #8a90a4);
   dominant-baseline: auto;
@@ -101,7 +101,7 @@
 
 .monitor-label-brand {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 15px;
+  font-size: max(var(--font-min-readable), calc(20px * var(--font-scale)));
   fill: var(--color-text-dim, #8a90a4);
   dominant-baseline: auto;
   text-anchor: middle;
@@ -132,7 +132,7 @@
 
 .pip-label-text {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 8px;
+  font-size: max(var(--font-min-readable), calc(8px * var(--font-scale)));
   fill: var(--color-accent2, #f0a500);
   dominant-baseline: auto;
   text-anchor: middle;
@@ -159,7 +159,7 @@
 
 .dim-text {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 16.9px;
+  font-size: max(var(--font-min-readable), calc(16.9px * var(--font-scale)));
   fill: var(--color-text-dim, #8a90a4);
   dominant-baseline: auto;
   text-anchor: middle;
@@ -185,7 +185,7 @@
 
 .stream-overlay-text {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: max(var(--font-min-readable), calc(10px * var(--font-scale)));
   font-weight: 700;
   fill: var(--color-accent, #4a9eff);
   dominant-baseline: middle;
@@ -206,7 +206,7 @@
 
 .pip-zone-index {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 22px;
+  font-size: max(var(--font-min-readable), calc(22px * var(--font-scale)));
   font-weight: 800;
   fill: rgba(240, 165, 0, 0.35);
   dominant-baseline: middle;
@@ -216,7 +216,7 @@
 
 .pip-zone-maxres {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: max(var(--font-min-readable), calc(10px * var(--font-scale)));
   font-weight: 600;
   fill: rgba(255, 255, 255, 0.88);
   dominant-baseline: middle;
@@ -253,7 +253,7 @@
 
 .desktop-label {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 19.5px;
+  font-size: max(var(--font-min-readable), calc(19.5px * var(--font-scale)));
   font-weight: 600;
   fill: var(--color-text-dim, #8a90a4);
   pointer-events: none;
@@ -269,7 +269,7 @@
 
 .desktop-stands-reserved-label {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 15px;
+  font-size: max(var(--font-min-readable), calc(15px * var(--font-scale)));
   font-weight: 700;
   fill: rgba(255, 214, 153, 0.95);
   pointer-events: none;
@@ -283,7 +283,7 @@
 
 .desktop-equipment-label {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 13px;
+  font-size: max(var(--font-min-readable), calc(13px * var(--font-scale)));
   font-weight: 600;
   fill: #d9e7fb;
   pointer-events: none;
@@ -291,7 +291,7 @@
 
 .desktop-equipment-label-custom {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 13px;
+  font-size: max(var(--font-min-readable), calc(13px * var(--font-scale)));
   font-weight: 700;
   fill: #f1f7ff;
   pointer-events: none;
@@ -299,7 +299,7 @@
 
 .desktop-equipment-label-model {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: max(var(--font-min-readable), calc(10px * var(--font-scale)));
   font-weight: 500;
   fill: rgba(217, 231, 251, 0.72);
   pointer-events: none;
@@ -312,7 +312,7 @@
 
 .pip-zone-add-label-text {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 10px;
+  font-size: max(var(--font-min-readable), calc(10px * var(--font-scale)));
   font-weight: 700;
   fill: var(--color-accent2, #f0a500);
   dominant-baseline: middle;
@@ -323,3 +323,4 @@
 .pip-zone-add-label:hover .pip-zone-add-label-text {
   fill: #000;
 }
+

@@ -16,6 +16,7 @@
 
 const CANVAS = (() => {
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const MONITOR_BEZEL = 6;
   const MANUAL_MIN = 0.5;
   const MANUAL_MAX = 3.0;
   const MANUAL_STEP = 0.1;
@@ -123,9 +124,39 @@ const CANVAS = (() => {
     return _monitorRectFromCellRect(rect, cell, monitor);
   }
 
+  function getScreenRect(setupIndex, row, col) {
+    const monRect = getMonitorRect(setupIndex, row, col);
+    if (!monRect) return null;
+    return {
+      x: monRect.x + MONITOR_BEZEL,
+      y: monRect.y + MONITOR_BEZEL,
+      w: Math.max(monRect.w - MONITOR_BEZEL * 2, 10),
+      h: Math.max(monRect.h - MONITOR_BEZEL * 2 - 10, 10)
+    };
+  }
+
   function getDesktopRect(setupIndex) {
     const { colWidths, rowHeights } = GRID.calcDimensions(setupIndex);
     return GRID.desktopRect(setupIndex, colWidths, rowHeights);
+  }
+
+  function getDesktopMonitorRect(setupIndex, itemId) {
+    const desktopRect = getDesktopRect(setupIndex);
+    if (!desktopRect) return null;
+
+    const item = STATE.getDesktopMonitors(setupIndex).find(entry => entry.id === itemId);
+    if (!item) return null;
+
+    const monitor = CATALOG.find(entry => entry.id === item.monitorId && entry.category !== 'equipment');
+    if (!monitor) return null;
+
+    const isPortrait = item.orientation === 'portrait';
+    return {
+      x: desktopRect.x + GRID.mmToDisplay(item.x_mm),
+      y: desktopRect.y + GRID.mmToDisplay(item.y_mm),
+      w: GRID.mmToDisplay(isPortrait ? monitor.physicalHeight_mm : monitor.physicalWidth_mm),
+      h: GRID.mmToDisplay(isPortrait ? monitor.physicalWidth_mm : monitor.physicalHeight_mm)
+    };
   }
 
   /* ---- Main render ---- */
@@ -361,6 +392,14 @@ const CANVAS = (() => {
     }, 'monitor-screen');
     g.appendChild(screen);
 
+    const screenRect = {
+      x: x + BEZEL,
+      y: y + BEZEL,
+      w: Math.max(w - BEZEL * 2, 10),
+      h: Math.max(h - BEZEL * 2 - 10, 10)
+    };
+    _drawDesktopMonitorTestMedia(g, setupIndex, item, screenRect);
+
     const sizeLabel = text(`${monitor.size}"`, x + w / 2, y + h / 2 - 14, 'monitor-label-size', {
       'text-anchor': 'middle'
     });
@@ -391,6 +430,85 @@ const CANVAS = (() => {
     }
 
     parentGroup.appendChild(g);
+  }
+
+  function _drawDesktopMonitorTestMedia(group, setupIndex, desktopItem, screenRect) {
+    if (!(typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled())) {
+      return;
+    }
+
+    const ref = desktopItem.monitorTestMediaRef;
+    if (!ref || !ref.assetId) return;
+
+    const cx = screenRect.x + screenRect.w / 2;
+    const cy = screenRect.y + screenRect.h / 2;
+    const asset = TEST_MEDIA.getById ? TEST_MEDIA.getById(ref.assetId) : null;
+    if (!asset || !asset.dataUrl) {
+      const missing = text('Missing test media', cx, cy, 'test-media-missing');
+      group.appendChild(missing);
+      return;
+    }
+
+    const res = desktopItem.selectedResolution || { width: 1920, height: 1080 };
+    const isPortrait = desktopItem.orientation === 'portrait';
+    const resW = isPortrait ? res.height : res.width;
+    const resH = isPortrait ? res.width : res.height;
+    const hasSize = asset.width > 0 && asset.height > 0;
+    const scaleX = hasSize ? asset.width / resW : 1;
+    const scaleY = hasSize ? asset.height / resH : 1;
+    const scalingMode = desktopItem.monitorTestMediaScalingMode || 'center';
+
+    let finalScaleX;
+    let finalScaleY;
+    if (scalingMode === 'full') {
+      finalScaleX = scaleX;
+      finalScaleY = scaleY;
+    } else if (scalingMode === 'aspect') {
+      const fitScale = Math.min(scaleX, scaleY);
+      finalScaleX = fitScale;
+      finalScaleY = fitScale;
+    } else {
+      finalScaleX = scaleX;
+      finalScaleY = scaleY;
+    }
+
+    const imgW = Math.max(1, screenRect.w * finalScaleX);
+    const imgH = Math.max(1, screenRect.h * finalScaleY);
+    const imgX = screenRect.x + (screenRect.w - imgW) / 2;
+    const imgY = screenRect.y + (screenRect.h - imgH) / 2;
+
+    const bg = el('rect', {
+      x: screenRect.x,
+      y: screenRect.y,
+      width: screenRect.w,
+      height: screenRect.h,
+      fill: 'rgba(0,0,0,0.55)'
+    }, 'test-media-letterbox');
+    group.appendChild(bg);
+
+    const clipId = `tm-clip-desktop-${setupIndex}-${desktopItem.id}`;
+    const clipPath = el('clipPath', { id: clipId });
+    clipPath.appendChild(el('rect', {
+      x: screenRect.x,
+      y: screenRect.y,
+      width: screenRect.w,
+      height: screenRect.h
+    }));
+    group.appendChild(clipPath);
+
+    const img = el('image', {
+      x: imgX,
+      y: imgY,
+      width: imgW,
+      height: imgH,
+      href: asset.dataUrl,
+      preserveAspectRatio: scalingMode === 'full' ? 'none' : 'xMidYMid meet',
+      'clip-path': `url(#${clipId})`
+    }, 'test-media-overlay-image');
+    group.appendChild(img);
+
+    const label = text(asset.name || 'Test media', cx, screenRect.y + 12, 'test-media-overlay-label');
+    group.appendChild(label);
   }
 
   function _fitToWrapper(wrapper, intrinsicWidth, intrinsicHeight) {
@@ -428,7 +546,10 @@ const CANVAS = (() => {
     const cx = rect.x + rect.w / 2;
     const cy = rect.y + rect.h / 2;
     const hint = text('+', cx, cy + 4, 'dim-text');
-    hint.setAttribute('font-size', '20');
+    const rootStyles = getComputedStyle(document.documentElement);
+    const fontScale = parseFloat(rootStyles.getPropertyValue('--font-scale')) || 0.7;
+    const scaledHintSize = Math.max(8, Math.round(20 * fontScale));
+    hint.setAttribute('font-size', String(scaledHintSize));
     hint.setAttribute('opacity', '0.3');
     if (!dropAreasVisible) hint.classList.add('empty-cell-hint-hidden');
     g.appendChild(hint);
@@ -459,7 +580,6 @@ const CANVAS = (() => {
     g.style.cursor = 'pointer';
 
     // Body (outer bezel)
-    const BEZEL = 6;
     const body = el('rect', {
       x: monRect.x, y: monRect.y,
       width: monRect.w, height: monRect.h,
@@ -469,21 +589,25 @@ const CANVAS = (() => {
 
     // Screen area (inner)
     const screen = el('rect', {
-      x: monRect.x + BEZEL, y: monRect.y + BEZEL,
-      width: Math.max(monRect.w - BEZEL * 2, 10),
-      height: Math.max(monRect.h - BEZEL * 2 - 10, 10),
+      x: monRect.x + MONITOR_BEZEL, y: monRect.y + MONITOR_BEZEL,
+      width: Math.max(monRect.w - MONITOR_BEZEL * 2, 10),
+      height: Math.max(monRect.h - MONITOR_BEZEL * 2 - 10, 10),
       rx: 2
     }, 'monitor-screen');
     g.appendChild(screen);
 
     const screenRect = {
-      x: monRect.x + BEZEL,
-      y: monRect.y + BEZEL,
-      w: Math.max(monRect.w - BEZEL * 2, 10),
-      h: Math.max(monRect.h - BEZEL * 2 - 10, 10)
+      x: monRect.x + MONITOR_BEZEL,
+      y: monRect.y + MONITOR_BEZEL,
+      w: Math.max(monRect.w - MONITOR_BEZEL * 2, 10),
+      h: Math.max(monRect.h - MONITOR_BEZEL * 2 - 10, 10)
     };
 
-    _drawTestMediaOverlays(g, setupIndex, row, col, cell, screenRect);
+    if (cell.windowedAppsEnabled) {
+      _drawWindowedApps(g, setupIndex, row, col, cell, screenRect);
+    } else {
+      _drawTestMediaOverlays(g, setupIndex, row, col, cell, screenRect);
+    }
 
     // Size label
     const hasPip = !!(cell.pipZones && cell.pipZones.length && monitor.pipSupported);
@@ -491,11 +615,11 @@ const CANVAS = (() => {
     const cx = monRect.x + monRect.w / 2;
     const cy = monRect.y + monRect.h / 2;
 
-    const pipScreenTop = monRect.y + BEZEL;
-    const pipScreenBottom = monRect.y + monRect.h - BEZEL - 10;
-    const infoBgW = Math.max(Math.min(monRect.w - BEZEL * 2 - 10, 190), 90);
+    const pipScreenTop = monRect.y + MONITOR_BEZEL;
+    const pipScreenBottom = monRect.y + monRect.h - MONITOR_BEZEL - 10;
+    const infoBgW = Math.max(Math.min(monRect.w - MONITOR_BEZEL * 2 - 10, 190), 90);
     const infoBgH = 36;
-    const infoBgX = monRect.x + BEZEL + 4;
+    const infoBgX = monRect.x + MONITOR_BEZEL + 4;
     const infoBgY = pipPortrait
       ? (pipScreenBottom - infoBgH - 4)
       : (pipScreenTop + 4);
@@ -548,8 +672,8 @@ const CANVAS = (() => {
     // Stream overlay
     if (cell.streamId) {
       const overlay = el('rect', {
-        x: monRect.x + BEZEL, y: monRect.y + BEZEL,
-        width: monRect.w - BEZEL * 2, height: monRect.h - BEZEL * 2 - 10,
+        x: monRect.x + MONITOR_BEZEL, y: monRect.y + MONITOR_BEZEL,
+        width: monRect.w - MONITOR_BEZEL * 2, height: monRect.h - MONITOR_BEZEL * 2 - 10,
         rx: 3
       }, 'stream-overlay');
       g.appendChild(overlay);
@@ -573,8 +697,105 @@ const CANVAS = (() => {
     // Draggable for canvas→canvas move
     g.setAttribute('draggable', 'false'); // drag is handled by DRAG module via mousedown
     DRAG.attachMonitorDrag(g, setupIndex, row, col);
+    if (cell.windowedAppsEnabled && DRAG.attachWindowedAppInteraction) {
+      DRAG.attachWindowedAppInteraction(g, setupIndex, row, col);
+    }
 
     svg.appendChild(g);
+  }
+
+  function _drawWindowedApps(group, setupIndex, row, col, cell, screenRect) {
+    if (!(typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled())) {
+      return;
+    }
+    if (!Array.isArray(cell.windowedApps) || !cell.windowedApps.length) return;
+
+    const res = cell.selectedResolution || { width: 1920, height: 1080 };
+    const isPortrait = cell.orientation === 'portrait';
+    const resW = Math.max(1, isPortrait ? res.height : res.width);
+    const resH = Math.max(1, isPortrait ? res.width : res.height);
+    const scaleX = screenRect.w / resW;
+    const scaleY = screenRect.h / resH;
+
+    const clipId = `wapp-clip-${setupIndex}-${row}-${col}`;
+    const clipPath = el('clipPath', { id: clipId });
+    clipPath.appendChild(el('rect', {
+      x: screenRect.x,
+      y: screenRect.y,
+      width: screenRect.w,
+      height: screenRect.h
+    }));
+    group.appendChild(clipPath);
+
+    const layer = el('g', {
+      'data-role': 'windowed-apps-layer',
+      'clip-path': `url(#${clipId})`
+    });
+
+    cell.windowedApps.forEach(app => {
+      const asset = TEST_MEDIA.getById ? TEST_MEDIA.getById(app.assetId) : null;
+      if (!asset || !asset.dataUrl) return;
+
+      const svgX = screenRect.x + app.x * scaleX;
+      const svgY = screenRect.y + app.y * scaleY;
+      const svgW = Math.max(6, app.w * scaleX);
+      const svgH = Math.max(6, app.h * scaleY);
+
+      const img = el('image', {
+        x: svgX,
+        y: svgY,
+        width: svgW,
+        height: svgH,
+        href: asset.dataUrl,
+        preserveAspectRatio: 'none',
+        'data-role': 'windowed-app',
+        'data-app-id': app.id
+      }, 'windowed-app-image');
+      layer.appendChild(img);
+
+      const border = el('rect', {
+        x: svgX,
+        y: svgY,
+        width: svgW,
+        height: svgH,
+        'data-role': 'windowed-app',
+        'data-app-id': app.id
+      }, 'windowed-app-border');
+      layer.appendChild(border);
+
+      const closeX = svgX + svgW - 15;
+      const closeY = svgY + 1;
+      const closeBtn = el('rect', {
+        x: closeX,
+        y: closeY,
+        width: 14,
+        height: 14,
+        rx: 2,
+        'data-role': 'windowed-app-close',
+        'data-app-id': app.id
+      }, 'windowed-app-close');
+      layer.appendChild(closeBtn);
+
+      const closeTxt = text('×', closeX + 7, closeY + 8, 'windowed-app-close-text', {
+        'text-anchor': 'middle',
+        'dominant-baseline': 'middle',
+        'data-role': 'windowed-app-close',
+        'data-app-id': app.id
+      });
+      layer.appendChild(closeTxt);
+
+      const resize = el('rect', {
+        x: svgX + svgW - 8,
+        y: svgY + svgH - 8,
+        width: 8,
+        height: 8,
+        'data-role': 'windowed-app-resize',
+        'data-app-id': app.id
+      }, 'windowed-app-resize-handle');
+      layer.appendChild(resize);
+    });
+
+    group.appendChild(layer);
   }
 
   function _drawTestMediaOverlays(group, setupIndex, row, col, cell, screenRect) {
@@ -879,7 +1100,9 @@ const CANVAS = (() => {
     getRenderMetrics,
     getManualZoom,
     getMonitorRect,
+    getScreenRect,
     getDesktopRect,
+    getDesktopMonitorRect,
     openCellPopover,
     zoomIn,
     zoomOut,

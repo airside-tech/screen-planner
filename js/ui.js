@@ -76,6 +76,7 @@ const POPOVER = (() => {
     const autoScaleRow = el('popoverAutoScaleRow');
     const statusEl = el('testMediaStatus');
     const removeBtn = el('removeMonitorBtn');
+    const windowedAppsBtn = el('windowedAppsBtn');
     const resolutionPickerControl = el('resolutionPicker');
     const orientationPickerControl = el('orientationPicker');
     const addLabelBtn = el('addLabelBtn');
@@ -88,8 +89,12 @@ const POPOVER = (() => {
     if (resolutionLabel) resolutionLabel.hidden = isEquipment;
     if (orientationLabel) orientationLabel.hidden = isEquipment;
     if (pipRow) pipRow.hidden = isDesktopMonitor || isEquipment;
+    if (windowedAppsBtn) {
+      windowedAppsBtn.hidden = isDesktopMonitor || isEquipment;
+      windowedAppsBtn.classList.remove('active');
+    }
     if (addLabelBtn) {
-      addLabelBtn.hidden = isDesktopMonitor;
+      addLabelBtn.hidden = false;
       addLabelBtn.textContent = isEquipment ? 'Edit Label' : 'Add Label';
     }
     if (removeBtn) {
@@ -115,13 +120,10 @@ const POPOVER = (() => {
     }
 
     if (isDesktopMonitor) {
-      if (testMediaRow) testMediaRow.hidden = true;
-      if (autoScaleRow) autoScaleRow.hidden = true;
-      if (statusEl) statusEl.hidden = true;
-
       const desktopData = _getDesktopMonitorCurrent();
       if (!desktopData) return null;
       const { item, monitor } = desktopData;
+      const testMediaEnabled = typeof TEST_MEDIA !== 'undefined' && TEST_MEDIA.isEnabled && TEST_MEDIA.isEnabled();
 
       el('popoverTitle').textContent = `${monitor.size}" ${monitor.brand} — ${monitor.modelName}`;
 
@@ -150,12 +152,49 @@ const POPOVER = (() => {
       const orientationPicker = el('orientationPicker');
       if (orientationPicker) orientationPicker.value = item.orientation || 'landscape';
 
+      const clearMonitorBtn = el('clearMonitorMediaBtn');
+      const clearZoneBtn = el('clearZoneMediaBtn');
+      if (testMediaRow) testMediaRow.hidden = !testMediaEnabled;
+      if (statusEl) statusEl.hidden = !testMediaEnabled;
+      if (clearZoneBtn) clearZoneBtn.disabled = true;
+
+      if (testMediaEnabled && statusEl) {
+        const monitorAssetId = item.monitorTestMediaRef && item.monitorTestMediaRef.assetId
+          ? item.monitorTestMediaRef.assetId
+          : null;
+        const monitorAsset = monitorAssetId && TEST_MEDIA.getById ? TEST_MEDIA.getById(monitorAssetId) : null;
+        statusEl.textContent = `Monitor: ${monitorAsset ? monitorAsset.name : (monitorAssetId ? 'Missing asset' : 'No test media')}`;
+
+        if (autoScaleRow) {
+          const hasMonitorAsset = !!monitorAssetId;
+          autoScaleRow.hidden = !hasMonitorAsset;
+          if (hasMonitorAsset) {
+            const mode = item.monitorTestMediaScalingMode || 'center';
+            el('testMediaScaleCenter').classList.toggle('active', mode === 'center');
+            el('testMediaScaleAspect').classList.toggle('active', mode === 'aspect');
+            el('testMediaScaleFull').classList.toggle('active', mode === 'full');
+          }
+        }
+      } else if (autoScaleRow) {
+        autoScaleRow.hidden = true;
+      }
+
+      if (clearMonitorBtn) {
+        clearMonitorBtn.disabled = !testMediaEnabled || !(item.monitorTestMediaRef && item.monitorTestMediaRef.assetId);
+      }
+
       return { item, monitor, isDesktopMonitor: true };
     }
 
     const cell = STATE.getCell(_current.setupIndex, _current.row, _current.col);
     const monitor = cell ? CATALOG.find(m => m.id === cell.monitorId) : null;
     if (!monitor) return null;
+
+    if (windowedAppsBtn) {
+      const canWindowedApps = Number(monitor.size) >= 32;
+      windowedAppsBtn.hidden = !canWindowedApps;
+      windowedAppsBtn.classList.toggle('active', !!(canWindowedApps && cell.windowedAppsEnabled));
+    }
 
     el('popoverTitle').textContent = `${monitor.size}" ${monitor.brand} — ${monitor.modelName}`;
 
@@ -376,7 +415,11 @@ const POPOVER = (() => {
           _syncPopoverFields();
         }
       } else if (_isDesktopMonitorCurrent()) {
-        return;
+        const current = { ..._current };
+        hide();
+        if (LABELS.addDesktopMonitorLabel) {
+          LABELS.addDesktopMonitorLabel(current.setupIndex, current.itemId);
+        }
       } else {
         const current = { ..._current };
         hide();
@@ -396,12 +439,29 @@ const POPOVER = (() => {
       hide();
     });
 
+    el('windowedAppsBtn').addEventListener('click', () => {
+      if (!_current || _isDesktopMonitorCurrent() || _isEquipmentCurrent()) return;
+      const cell = STATE.getCell(_current.setupIndex, _current.row, _current.col);
+      if (!cell) return;
+      const monitor = CATALOG.find(m => m.id === cell.monitorId);
+      if (!monitor || Number(monitor.size) < 32) return;
+      if (STATE.toggleWindowedMode) {
+        STATE.toggleWindowedMode(_current.setupIndex, _current.row, _current.col);
+        _syncPopoverFields();
+      }
+    });
+
     const clearMonitorBtn = el('clearMonitorMediaBtn');
     if (clearMonitorBtn) {
       clearMonitorBtn.addEventListener('click', () => {
         if (!_current || !STATE.clearMonitorTestMedia) return;
-        if (_isDesktopMonitorCurrent()) return;
-        STATE.clearMonitorTestMedia(_current.setupIndex, _current.row, _current.col);
+        if (_isDesktopMonitorCurrent()) {
+          if (STATE.clearDesktopMonitorTestMedia) {
+            STATE.clearDesktopMonitorTestMedia(_current.setupIndex, _current.itemId);
+          }
+        } else {
+          STATE.clearMonitorTestMedia(_current.setupIndex, _current.row, _current.col);
+        }
         _syncPopoverFields();
       });
     }
@@ -425,14 +485,24 @@ const POPOVER = (() => {
 
     document.querySelectorAll('.btn-testmedia-scale').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!_current || !STATE.setMonitorTestMediaScalingMode) return;
-        if (_isDesktopMonitorCurrent()) return;
-        STATE.setMonitorTestMediaScalingMode(
-          _current.setupIndex,
-          _current.row,
-          _current.col,
-          btn.dataset.scalingMode
-        );
+        if (!_current) return;
+        if (_isDesktopMonitorCurrent()) {
+          if (STATE.setDesktopMonitorTestMediaScalingMode) {
+            STATE.setDesktopMonitorTestMediaScalingMode(
+              _current.setupIndex,
+              _current.itemId,
+              btn.dataset.scalingMode
+            );
+          }
+        } else {
+          if (!STATE.setMonitorTestMediaScalingMode) return;
+          STATE.setMonitorTestMediaScalingMode(
+            _current.setupIndex,
+            _current.row,
+            _current.col,
+            btn.dataset.scalingMode
+          );
+        }
         _syncPopoverFields();
       });
     });

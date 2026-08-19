@@ -172,12 +172,27 @@ const STATE = (() => {
     const selectedResolution = item.selectedResolution && typeof item.selectedResolution === 'object'
       ? item.selectedResolution
       : monitor.resolutions[0];
+    const monitorTestMediaRef = _normalizeTestMediaRef(item.monitorTestMediaRef);
+    const monitorTestMediaScalingMode = ['center', 'aspect', 'full'].includes(item.monitorTestMediaScalingMode)
+      ? item.monitorTestMediaScalingMode
+      : 'center';
+    let labels = [];
+    if (Array.isArray(item.labels) && item.labels.length) {
+      const normalized = _normalizeDesktopMonitorLabel(item.labels[0]);
+      if (normalized) labels = [normalized];
+    } else {
+      const migrated = _normalizeDesktopMonitorLabel(item.label);
+      if (migrated) labels = [migrated];
+    }
 
     return {
       id: item.id.trim(),
       monitorId: item.monitorId.trim(),
       selectedResolution,
       orientation,
+      monitorTestMediaRef,
+      monitorTestMediaScalingMode,
+      labels,
       x_mm,
       y_mm
     };
@@ -204,6 +219,113 @@ const STATE = (() => {
     };
     if (zoneId) next.zoneId = zoneId;
     return next;
+  }
+
+  function _monitorResolutionForCell(cell) {
+    const res = cell && cell.selectedResolution ? cell.selectedResolution : { width: 1920, height: 1080 };
+    const isPortrait = cell && cell.orientation === 'portrait';
+    return {
+      width: Math.max(1, isPortrait ? res.height : res.width),
+      height: Math.max(1, isPortrait ? res.width : res.height)
+    };
+  }
+
+  function _normalizeWindowedApp(cell, app) {
+    if (!app || typeof app !== 'object') return null;
+    if (typeof app.assetId !== 'string' || !app.assetId.trim()) return null;
+
+    const res = _monitorResolutionForCell(cell);
+    const minW = Math.min(80, res.width);
+    const minH = Math.min(80, res.height);
+
+    const rawW = Number(app.w);
+    const rawH = Number(app.h);
+    const w = Math.max(minW, Math.min(res.width, Number.isFinite(rawW) ? Math.round(rawW) : Math.round(res.width * 0.5)));
+    const h = Math.max(minH, Math.min(res.height, Number.isFinite(rawH) ? Math.round(rawH) : Math.round(res.height * 0.5)));
+
+    const rawX = Number(app.x);
+    const rawY = Number(app.y);
+    const x = Math.max(0, Math.min(res.width - w, Number.isFinite(rawX) ? Math.round(rawX) : Math.round((res.width - w) * 0.5)));
+    const y = Math.max(0, Math.min(res.height - h, Number.isFinite(rawY) ? Math.round(rawY) : Math.round((res.height - h) * 0.5)));
+
+    return {
+      id: (typeof app.id === 'string' && app.id.trim())
+        ? app.id.trim()
+        : ('wapp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7)),
+      assetId: app.assetId.trim(),
+      x,
+      y,
+      w,
+      h
+    };
+  }
+
+  function _newLabelId() {
+    return 'lbl-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7);
+  }
+
+  function _normalizeLabelText(value, maxLen) {
+    return String(value || '').trim().slice(0, maxLen);
+  }
+
+  function _normalizeDesktopMonitorLabel(labelLike) {
+    if (typeof labelLike === 'string') {
+      const text = _normalizeLabelText(labelLike, 30);
+      if (!text) return null;
+      return {
+        id: _newLabelId(),
+        text,
+        colorClass: 'label-color-sky',
+        x: 10,
+        y: 10
+      };
+    }
+
+    if (!labelLike || typeof labelLike !== 'object') return null;
+
+    const text = _normalizeLabelText(labelLike.text, 30);
+    if (!text) return null;
+
+    const nextX = Number(labelLike.x);
+    const nextY = Number(labelLike.y);
+
+    return {
+      id: (typeof labelLike.id === 'string' && labelLike.id.trim())
+        ? labelLike.id.trim()
+        : _newLabelId(),
+      text,
+      colorClass: (typeof labelLike.colorClass === 'string' && labelLike.colorClass.trim())
+        ? labelLike.colorClass.trim()
+        : 'label-color-sky',
+      x: Number.isFinite(nextX) ? nextX : 10,
+      y: Number.isFinite(nextY) ? nextY : 10
+    };
+  }
+
+  function _ensureDesktopMonitorLabelSlot(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (!Array.isArray(item.labels)) item.labels = [];
+
+    if (item.labels.length > 0) {
+      const normalized = _normalizeDesktopMonitorLabel(item.labels[0]);
+      if (!normalized) {
+        item.labels = [];
+        return null;
+      }
+      item.labels = [normalized];
+      return normalized;
+    }
+
+    if (typeof item.label === 'string' && item.label.trim()) {
+      const migrated = _normalizeDesktopMonitorLabel(item.label);
+      if (migrated) {
+        item.labels = [migrated];
+        item.label = '';
+        return migrated;
+      }
+    }
+
+    return null;
   }
 
   function _validate(setupIndex, row, col) {
@@ -235,7 +357,9 @@ const STATE = (() => {
       labels: [],
       streamId: null,
       monitorTestMediaRef: null,
-      monitorTestMediaScalingMode: 'center'
+      monitorTestMediaScalingMode: 'center',
+      windowedAppsEnabled: false,
+      windowedApps: []
     };
     _reflowActivePipZones(setupIndex, null, true);
     _emit(setupIndex);
@@ -466,6 +590,107 @@ const STATE = (() => {
 
   function clearMonitorTestMedia(setupIndex, row, col) {
     setMonitorTestMedia(setupIndex, row, col, null);
+  }
+
+  function toggleWindowedMode(setupIndex, row, col) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return;
+    cell.windowedAppsEnabled = !cell.windowedAppsEnabled;
+    _emit(setupIndex);
+  }
+
+  function addWindowedApp(setupIndex, row, col, assetId, x, y, w, h) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell) return null;
+
+    const next = _normalizeWindowedApp(cell, {
+      id: null,
+      assetId,
+      x,
+      y,
+      w,
+      h
+    });
+    if (!next) return null;
+
+    if (!Array.isArray(cell.windowedApps)) cell.windowedApps = [];
+    cell.windowedApps.push(next);
+    _emit(setupIndex);
+    return next;
+  }
+
+  function moveWindowedApp(setupIndex, row, col, appId, x, y) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell || !appId) return false;
+    if (!Array.isArray(cell.windowedApps)) cell.windowedApps = [];
+
+    const idx = cell.windowedApps.findIndex(app => app.id === appId);
+    if (idx < 0) return false;
+
+    const app = cell.windowedApps[idx];
+    const normalized = _normalizeWindowedApp(cell, {
+      id: app.id,
+      assetId: app.assetId,
+      x,
+      y,
+      w: app.w,
+      h: app.h
+    });
+    if (!normalized) return false;
+
+    if (app.x === normalized.x && app.y === normalized.y) return true;
+    app.x = normalized.x;
+    app.y = normalized.y;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function resizeWindowedApp(setupIndex, row, col, appId, w, h) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell || !appId) return false;
+    if (!Array.isArray(cell.windowedApps)) cell.windowedApps = [];
+
+    const idx = cell.windowedApps.findIndex(app => app.id === appId);
+    if (idx < 0) return false;
+
+    const app = cell.windowedApps[idx];
+    const normalized = _normalizeWindowedApp(cell, {
+      id: app.id,
+      assetId: app.assetId,
+      x: app.x,
+      y: app.y,
+      w,
+      h
+    });
+    if (!normalized) return false;
+
+    if (app.w === normalized.w && app.h === normalized.h && app.x === normalized.x && app.y === normalized.y) {
+      return true;
+    }
+    app.w = normalized.w;
+    app.h = normalized.h;
+    // Keep app inside bounds if size changed.
+    app.x = normalized.x;
+    app.y = normalized.y;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function removeWindowedApp(setupIndex, row, col, appId) {
+    _validate(setupIndex, row, col);
+    const cell = ws.setups[setupIndex].grid[row][col];
+    if (!cell || !appId) return false;
+    if (!Array.isArray(cell.windowedApps)) cell.windowedApps = [];
+
+    const prevLen = cell.windowedApps.length;
+    cell.windowedApps = cell.windowedApps.filter(app => app.id !== appId);
+    if (cell.windowedApps.length === prevLen) return false;
+    _emit(setupIndex);
+    return true;
   }
 
   function setMonitorTestMediaScalingMode(setupIndex, row, col, mode) {
@@ -755,6 +980,9 @@ const STATE = (() => {
       monitorId,
       selectedResolution: selectedResolution || monitor.resolutions[0],
       orientation: orientation === 'portrait' ? 'portrait' : 'landscape',
+      monitorTestMediaRef: null,
+      monitorTestMediaScalingMode: 'center',
+      labels: [],
       x_mm: Number.isFinite(x_mm) ? x_mm : 0,
       y_mm: Number.isFinite(y_mm) ? y_mm : 0
     };
@@ -808,6 +1036,154 @@ const STATE = (() => {
     if (item.orientation === next) return true;
 
     item.orientation = next;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function setDesktopMonitorTestMedia(setupIndex, itemId, assetId) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const next = (typeof assetId === 'string' && assetId.trim())
+      ? { assetId: assetId.trim(), placement: 'monitor' }
+      : null;
+
+    const currentId = item.monitorTestMediaRef && item.monitorTestMediaRef.assetId
+      ? item.monitorTestMediaRef.assetId
+      : null;
+    const nextId = next ? next.assetId : null;
+    if (currentId === nextId) return true;
+
+    item.monitorTestMediaRef = next;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function clearDesktopMonitorTestMedia(setupIndex, itemId) {
+    return setDesktopMonitorTestMedia(setupIndex, itemId, null);
+  }
+
+  function setDesktopMonitorTestMediaScalingMode(setupIndex, itemId, mode) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const valid = ['center', 'aspect', 'full'];
+    const nextMode = valid.includes(mode) ? mode : 'center';
+    if (item.monitorTestMediaScalingMode === nextMode) return true;
+
+    item.monitorTestMediaScalingMode = nextMode;
+    _emit(setupIndex);
+    return true;
+  }
+
+  function setDesktopMonitorLabel(setupIndex, itemId, labelText) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const existing = _ensureDesktopMonitorLabelSlot(item);
+    const nextText = _normalizeLabelText(labelText, 30);
+
+    if (!nextText) {
+      if (!existing) return true;
+      item.labels = [];
+      _emit(setupIndex);
+      return true;
+    }
+
+    if (existing && existing.text === nextText) return true;
+
+    if (existing) {
+      existing.text = nextText;
+    } else {
+      item.labels = [{
+        id: _newLabelId(),
+        text: nextText,
+        colorClass: 'label-color-sky',
+        x: 10,
+        y: 10
+      }];
+    }
+
+    _emit(setupIndex);
+    return true;
+  }
+
+  function getDesktopMonitorLabel(setupIndex, itemId) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return null;
+    return _ensureDesktopMonitorLabelSlot(item);
+  }
+
+  function addDesktopMonitorLabel(setupIndex, itemId, text, colorClass, x, y) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return null;
+
+    const label = {
+      id: _newLabelId(),
+      text: _normalizeLabelText(text || 'Label', 30) || 'Label',
+      colorClass: colorClass || 'label-color-sky',
+      x: Number.isFinite(x) ? x : 10,
+      y: Number.isFinite(y) ? y : 10
+    };
+
+    item.labels = [label];
+    _emit(setupIndex);
+    return label;
+  }
+
+  function updateDesktopMonitorLabel(setupIndex, itemId, labelId, changes) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const label = _ensureDesktopMonitorLabelSlot(item);
+    if (!label || label.id !== labelId) return false;
+
+    const next = Object.assign({}, label, changes || {});
+    const normalized = _normalizeDesktopMonitorLabel(next);
+    if (!normalized) return false;
+    normalized.id = label.id;
+
+    item.labels = [normalized];
+    _emit(setupIndex);
+    return true;
+  }
+
+  function removeDesktopMonitorLabel(setupIndex, itemId, labelId) {
+    if (setupIndex < 0 || setupIndex > 1) throw new RangeError('setupIndex must be 0 or 1');
+    const setup = ws.setups[setupIndex];
+    if (!Array.isArray(setup.desktopMonitors)) setup.desktopMonitors = [];
+
+    const item = setup.desktopMonitors.find(entry => entry.id === itemId);
+    if (!item) return false;
+
+    const label = _ensureDesktopMonitorLabelSlot(item);
+    if (!label || label.id !== labelId) return false;
+
+    item.labels = [];
     _emit(setupIndex);
     return true;
   }
@@ -899,6 +1275,11 @@ const STATE = (() => {
           nextCell.monitorTestMediaScalingMode = nextCell.monitorTestMediaAutoScale ? 'full' : 'center';
         }
         delete nextCell.monitorTestMediaAutoScale;
+        nextCell.windowedAppsEnabled = !!nextCell.windowedAppsEnabled;
+        if (!Array.isArray(nextCell.windowedApps)) nextCell.windowedApps = [];
+        nextCell.windowedApps = nextCell.windowedApps
+          .map(app => _normalizeWindowedApp(nextCell, app))
+          .filter(Boolean);
         if (Array.isArray(nextCell.pipZones)) {
           nextCell.pipZones.forEach(zone => {
             zone.testMediaRef = _normalizeTestMediaRef(zone.testMediaRef, zone.id);
@@ -957,8 +1338,13 @@ const STATE = (() => {
     setDesktopConfig, getDesktopConfig,
     addDesktopEquipment, moveDesktopEquipment, removeDesktopEquipment, getDesktopEquipment, setEquipmentLabel,
     addDesktopMonitor, moveDesktopMonitor, setDesktopMonitorResolution, setDesktopMonitorOrientation,
+    setDesktopMonitorTestMedia, clearDesktopMonitorTestMedia, setDesktopMonitorTestMediaScalingMode,
+    setDesktopMonitorLabel,
+    getDesktopMonitorLabel, addDesktopMonitorLabel, updateDesktopMonitorLabel, removeDesktopMonitorLabel,
     removeDesktopMonitor, getDesktopMonitors,
     setMonitorTestMedia, clearMonitorTestMedia, setMonitorTestMediaScalingMode,
+    toggleWindowedMode,
+    addWindowedApp, moveWindowedApp, resizeWindowedApp, removeWindowedApp,
     setZoneTestMedia, clearZoneTestMedia,
     addLabel, updateLabel, removeLabel,
     addZoneLabel, updateZoneLabel, removeZoneLabel,

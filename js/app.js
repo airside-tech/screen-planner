@@ -67,11 +67,24 @@ function _loadSetupsFromStorage() {
       if (!raw) return;
       const data = JSON.parse(raw);
       STATE.importSetup(idx, data);
-      // Sync the editable title span with the restored name
-      const suffix = idx === 0 ? 'A' : 'B';
-      const titleEl = document.getElementById('title' + suffix);
-      const setup = STATE.getSetup(idx);
-      if (titleEl && setup && setup.name) titleEl.textContent = setup.name;
     } catch (_) { /* ignore corrupt data */ }
+  });
+
+  // Repair legacy persisted state where Setup B title was accidentally saved as Setup A.
+  const setupA = STATE.getSetup(0);
+  const setupB = STATE.getSetup(1);
+  if (setupA && setupB && setupA.name === 'Setup A' && setupB.name === 'Setup A') {
+    STATE.renameSetup(1, 'Setup B');
+    try {
+      localStorage.setItem('screenplanner_setup_1', JSON.stringify(STATE.exportSetup(1)));
+    } catch (_) { /* storage unavailable */ }
+  }
+
+  // Sync editable title spans with current state names.
+  [0, 1].forEach(idx => {
+    const suffix = idx === 0 ? 'A' : 'B';
+    const titleEl = document.getElementById('title' + suffix);
+    const setup = STATE.getSetup(idx);
+    if (titleEl && setup && setup.name) titleEl.textContent = setup.name;
   });
 }

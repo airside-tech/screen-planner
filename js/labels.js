@@ -135,7 +135,7 @@ const LABELS = (() => {
 
           cell.labels.slice(0, 1).forEach(lbl => {
             _createLabelEl(container, lbl, setupIndex, r, c, rect.w, rect.h, zoom,
-                           null /* no zoneId */);
+                           null /* no zoneId */, null /* desktopItemId */);
           });
         }
 
@@ -161,15 +161,40 @@ const LABELS = (() => {
             wrapper.appendChild(zc);
 
             zone.labels.slice(0, 1).forEach(lbl => {
-              _createLabelEl(zc, lbl, setupIndex, r, c, zone.w, zone.h, zoom, zone.id);
+              _createLabelEl(zc, lbl, setupIndex, r, c, zone.w, zone.h, zoom, zone.id, null);
             });
           });
         }
       }
     }
+
+    if (STATE.getDesktopMonitors && CANVAS.getDesktopMonitorRect) {
+      const desktopMonitors = STATE.getDesktopMonitors(setupIndex);
+      desktopMonitors.forEach(item => {
+        const lbl = STATE.getDesktopMonitorLabel ? STATE.getDesktopMonitorLabel(setupIndex, item.id) : null;
+        if (!lbl) return;
+
+        const rect = CANVAS.getDesktopMonitorRect(setupIndex, item.id);
+        if (!rect) return;
+
+        const container = document.createElement('div');
+        container.className = 'label-container desktop-monitor-label-container';
+        container.dataset.setup = setupIndex;
+        container.dataset.desktopItemId = item.id;
+        container.style.left = pad + rect.x * zoom + 'px';
+        container.style.top = pad + rect.y * zoom + 'px';
+        container.style.width = Math.round(rect.w * zoom) + 'px';
+        container.style.height = Math.round(rect.h * zoom) + 'px';
+        container.style.position = 'absolute';
+        container.style.pointerEvents = 'none';
+        wrapper.appendChild(container);
+
+        _createLabelEl(container, lbl, setupIndex, null, null, rect.w, rect.h, zoom, null, item.id);
+      });
+    }
   }
 
-  function _createLabelEl(container, lbl, setupIndex, row, col, cellW, cellH, zoom, zoneId) {
+  function _createLabelEl(container, lbl, setupIndex, row, col, cellW, cellH, zoom, zoneId, desktopItemId) {
     const div = document.createElement('div');
     div.id = lbl.id;
     div.className = `screen-label ${lbl.colorClass}`;
@@ -184,15 +209,15 @@ const LABELS = (() => {
         return;
       }
       e.stopPropagation();
-      _openTooltip(setupIndex, row, col, lbl.id, div, lbl, zoneId);
+      _openTooltip(setupIndex, row, col, lbl.id, div, lbl, zoneId, desktopItemId);
     });
 
-    _attachLabelDrag(div, setupIndex, row, col, lbl.id, cellW, cellH, zoom, zoneId);
+    _attachLabelDrag(div, setupIndex, row, col, lbl.id, cellW, cellH, zoom, zoneId, desktopItemId);
 
     container.appendChild(div);
   }
 
-  function _attachLabelDrag(div, setupIndex, row, col, labelId, cellW, cellH, zoom, zoneId) {
+  function _attachLabelDrag(div, setupIndex, row, col, labelId, cellW, cellH, zoom, zoneId, desktopItemId) {
     let startX, startY, startLeft, startTop;
     let moved = false;
 
@@ -227,7 +252,9 @@ const LABELS = (() => {
         if (moved) div.dataset.suppressClick = 'true';
         const nx = parseInt(div.style.left, 10) / zoom;
         const ny = parseInt(div.style.top,  10) / zoom;
-        if (zoneId) {
+        if (desktopItemId && STATE.updateDesktopMonitorLabel) {
+          STATE.updateDesktopMonitorLabel(setupIndex, desktopItemId, labelId, { x: nx, y: ny });
+        } else if (zoneId) {
           STATE.updateZoneLabel(setupIndex, row, col, zoneId, labelId, { x: nx, y: ny });
         } else {
           STATE.updateLabel(setupIndex, row, col, labelId, { x: nx, y: ny });
@@ -241,13 +268,14 @@ const LABELS = (() => {
 
   /* ---- Tooltip ---- */
 
-  function _openTooltip(setupIndex, row, col, labelId, labelEl, lbl, zoneId, isNew = false) {
+  function _openTooltip(setupIndex, row, col, labelId, labelEl, lbl, zoneId, desktopItemId, isNew = false) {
     _editState = {
       setupIndex,
       row,
       col,
       labelId,
       zoneId: zoneId || null,
+      desktopItemId: desktopItemId || null,
       isNew,
       originalText: lbl.text || 'Label',
       originalColor: lbl.colorClass || COLORS[0].cls
@@ -320,7 +348,14 @@ const LABELS = (() => {
   function _commitTooltip() {
     if (!_editState) return;
     const draft = _getDraft();
-    if (_editState.zoneId) {
+    if (_editState.desktopItemId && STATE.updateDesktopMonitorLabel) {
+      STATE.updateDesktopMonitorLabel(
+        _editState.setupIndex,
+        _editState.desktopItemId,
+        _editState.labelId,
+        { text: draft.text, colorClass: draft.colorClass }
+      );
+    } else if (_editState.zoneId) {
       STATE.updateZoneLabel(
         _editState.setupIndex, _editState.row, _editState.col,
         _editState.zoneId, _editState.labelId,
@@ -349,7 +384,13 @@ const LABELS = (() => {
 
   function _removeCurrentLabel() {
     if (!_editState) return;
-    if (_editState.zoneId) {
+    if (_editState.desktopItemId && STATE.removeDesktopMonitorLabel) {
+      STATE.removeDesktopMonitorLabel(
+        _editState.setupIndex,
+        _editState.desktopItemId,
+        _editState.labelId
+      );
+    } else if (_editState.zoneId) {
       STATE.removeZoneLabel(
         _editState.setupIndex, _editState.row, _editState.col,
         _editState.zoneId, _editState.labelId
@@ -362,10 +403,10 @@ const LABELS = (() => {
     _closeTooltip();
   }
 
-  function _openExistingLabel(setupIndex, row, col, lbl, zoneId) {
+  function _openExistingLabel(setupIndex, row, col, lbl, zoneId, desktopItemId) {
     const open = () => {
       const el = document.getElementById(lbl.id);
-      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId);
+      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId, desktopItemId);
     };
     setTimeout(open, 60);
   }
@@ -378,7 +419,7 @@ const LABELS = (() => {
 
     const existing = cell.labels && cell.labels[0];
     if (existing) {
-      _openExistingLabel(setupIndex, row, col, existing, null);
+      _openExistingLabel(setupIndex, row, col, existing, null, null);
       return;
     }
 
@@ -387,7 +428,7 @@ const LABELS = (() => {
 
     setTimeout(() => {
       const el = document.getElementById(lbl.id);
-      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, null, true);
+      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, null, null, true);
     }, 60);
   }
 
@@ -401,7 +442,7 @@ const LABELS = (() => {
 
     const existing = zone.labels && zone.labels[0];
     if (existing) {
-      _openExistingLabel(setupIndex, row, col, existing, zoneId);
+      _openExistingLabel(setupIndex, row, col, existing, zoneId, null);
       return;
     }
 
@@ -410,9 +451,27 @@ const LABELS = (() => {
 
     setTimeout(() => {
       const el = document.getElementById(lbl.id);
-      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId, true);
+      if (el) _openTooltip(setupIndex, row, col, lbl.id, el, lbl, zoneId, null, true);
     }, 60);
   }
 
-  return { init, syncLabels, addLabel, addZoneLabel };
+  function addDesktopMonitorLabel(setupIndex, itemId) {
+    if (!STATE.getDesktopMonitorLabel || !STATE.addDesktopMonitorLabel) return;
+
+    const existing = STATE.getDesktopMonitorLabel(setupIndex, itemId);
+    if (existing) {
+      _openExistingLabel(setupIndex, null, null, existing, null, itemId);
+      return;
+    }
+
+    const lbl = STATE.addDesktopMonitorLabel(setupIndex, itemId, 'Label', 'label-color-sky', 10, 10);
+    if (!lbl) return;
+
+    setTimeout(() => {
+      const el = document.getElementById(lbl.id);
+      if (el) _openTooltip(setupIndex, null, null, lbl.id, el, lbl, null, itemId, true);
+    }, 60);
+  }
+
+  return { init, syncLabels, addLabel, addZoneLabel, addDesktopMonitorLabel };
 })();

@@ -106,20 +106,40 @@ const TEST_MEDIA = (() => {
         return;
       }
       const parsed = JSON.parse(raw);
-      _assets = Array.isArray(parsed) ? parsed.filter(_isValidAsset) : [];
+      _assets = Array.isArray(parsed) ? parsed.map(_normalizeAsset).filter(Boolean) : [];
     } catch (_) {
       _assets = [];
     }
   }
 
-  function _isValidAsset(asset) {
-    return !!(
-      asset &&
-      typeof asset.id === 'string' && asset.id &&
-      typeof asset.name === 'string' &&
-      typeof asset.mimeType === 'string' &&
-      typeof asset.dataUrl === 'string' && asset.dataUrl
-    );
+  function _normalizeAsset(asset) {
+    if (!asset || typeof asset !== 'object') return null;
+    if (typeof asset.id !== 'string' || !asset.id.trim()) return null;
+    if (typeof asset.dataUrl !== 'string' || !asset.dataUrl) return null;
+
+    const normalized = {
+      id: asset.id.trim(),
+      name: typeof asset.name === 'string' && asset.name.trim()
+        ? asset.name.trim()
+        : 'Test media',
+      mimeType: typeof asset.mimeType === 'string' && asset.mimeType.trim()
+        ? asset.mimeType.trim()
+        : _mimeTypeFromDataUrl(asset.dataUrl),
+      dataUrl: asset.dataUrl,
+      width: Number.isFinite(asset.width) ? asset.width : 0,
+      height: Number.isFinite(asset.height) ? asset.height : 0
+    };
+
+    if (Number.isFinite(asset.createdAt)) {
+      normalized.createdAt = asset.createdAt;
+    }
+
+    return normalized.mimeType ? normalized : null;
+  }
+
+  function _mimeTypeFromDataUrl(dataUrl) {
+    const match = /^data:([^;,]+)[;,]/i.exec(dataUrl || '');
+    return match && match[1] ? match[1].toLowerCase() : '';
   }
 
   function addFromFile(file) {
